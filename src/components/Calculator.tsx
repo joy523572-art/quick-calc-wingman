@@ -71,8 +71,13 @@ const Calculator = () => {
   const equals = useCallback(() => {
     if (!expr) return;
     try {
-      const r = evaluate(prepareExpr(expr, isRad));
+      const r = evaluate(normalize(expr), buildScope(isRad));
+      if (r === undefined || r === null || typeof r === "function") return;
       const formatted = formatResult(r);
+      if (formatted === "Error") {
+        setResult("Error");
+        return;
+      }
       setHistory((h) => [{ expr, result: formatted }, ...h].slice(0, 50));
       setExpr(formatted);
       setResult("");
