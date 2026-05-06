@@ -224,9 +224,9 @@ const Calculator = () => {
           {[
             { l: "MC", a: () => setMemory(0) },
             { l: "MR", a: () => append(String(memory)) },
-            { l: "M+", a: () => result && setMemory((m) => m + Number(result)) },
-            { l: "M−", a: () => result && setMemory((m) => m - Number(result)) },
-            { l: "MS", a: () => result && setMemory(Number(result)) },
+            { l: "M+", a: () => { const n = Number(result); if (isFinite(n)) setMemory((m) => m + n); } },
+            { l: "M−", a: () => { const n = Number(result); if (isFinite(n)) setMemory((m) => m - n); } },
+            { l: "MS", a: () => { const n = Number(result); if (isFinite(n)) setMemory(n); } },
           ].map((b) => (
             <button key={b.l} onClick={b.a} className="calc-key-fn text-xs py-2">
               {b.l}
