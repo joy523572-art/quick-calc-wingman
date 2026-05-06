@@ -53,8 +53,8 @@ const Calculator = () => {
       return;
     }
     try {
-      const r = evaluate(prepareExpr(expr, isRad));
-      if (r === undefined || r === null) setResult("");
+      const r = evaluate(normalize(expr), buildScope(isRad));
+      if (r === undefined || r === null || typeof r === "function") setResult("");
       else setResult(formatResult(r));
     } catch {
       setResult("");
