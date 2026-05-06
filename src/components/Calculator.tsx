@@ -53,8 +53,8 @@ const Calculator = () => {
       return;
     }
     try {
-      const r = evaluate(prepareExpr(expr, isRad));
-      if (r === undefined || r === null) setResult("");
+      const r = evaluate(normalize(expr), buildScope(isRad));
+      if (r === undefined || r === null || typeof r === "function") setResult("");
       else setResult(formatResult(r));
     } catch {
       setResult("");
@@ -71,8 +71,13 @@ const Calculator = () => {
   const equals = useCallback(() => {
     if (!expr) return;
     try {
-      const r = evaluate(prepareExpr(expr, isRad));
+      const r = evaluate(normalize(expr), buildScope(isRad));
+      if (r === undefined || r === null || typeof r === "function") return;
       const formatted = formatResult(r);
+      if (formatted === "Error") {
+        setResult("Error");
+        return;
+      }
       setHistory((h) => [{ expr, result: formatted }, ...h].slice(0, 50));
       setExpr(formatted);
       setResult("");
@@ -219,9 +224,9 @@ const Calculator = () => {
           {[
             { l: "MC", a: () => setMemory(0) },
             { l: "MR", a: () => append(String(memory)) },
-            { l: "M+", a: () => result && setMemory((m) => m + Number(result)) },
-            { l: "M−", a: () => result && setMemory((m) => m - Number(result)) },
-            { l: "MS", a: () => result && setMemory(Number(result)) },
+            { l: "M+", a: () => { const n = Number(result); if (isFinite(n)) setMemory((m) => m + n); } },
+            { l: "M−", a: () => { const n = Number(result); if (isFinite(n)) setMemory((m) => m - n); } },
+            { l: "MS", a: () => { const n = Number(result); if (isFinite(n)) setMemory(n); } },
           ].map((b) => (
             <button key={b.l} onClick={b.a} className="calc-key-fn text-xs py-2">
               {b.l}
@@ -305,21 +310,22 @@ const Calculator = () => {
   );
 };
 
-function prepareExpr(s: string, rad: boolean) {
-  let out = s.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
-  if (!rad) {
-    return s
-      .replace(/×/g, "*")
-      .replace(/÷/g, "/")
-      .replace(/−/g, "-")
-      .replace(/\bsin\(/g, "sin((pi/180)*")
-      .replace(/\bcos\(/g, "cos((pi/180)*")
-      .replace(/\btan\(/g, "tan((pi/180)*")
-      .replace(/\basin\(/g, "(180/pi)*asin(")
-      .replace(/\bacos\(/g, "(180/pi)*acos(")
-      .replace(/\batan\(/g, "(180/pi)*atan(");
-  }
-  return out;
+function normalize(s: string) {
+  return s.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
+}
+
+function buildScope(rad: boolean) {
+  if (rad) return {};
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const toDeg = (x: number) => (x * 180) / Math.PI;
+  return {
+    sin: (x: number) => Math.sin(toRad(x)),
+    cos: (x: number) => Math.cos(toRad(x)),
+    tan: (x: number) => Math.tan(toRad(x)),
+    asin: (x: number) => toDeg(Math.asin(x)),
+    acos: (x: number) => toDeg(Math.acos(x)),
+    atan: (x: number) => toDeg(Math.atan(x)),
+  };
 }
 
 function formatResult(r: any): string {
