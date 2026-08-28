@@ -95,7 +95,7 @@ const Calculator = () => {
         back();
       } else if (e.key === "Escape") {
         clear();
-      } else if (/^[0-9+\-*/().,%^]$/.test(e.key)) {
+      } else if (/^[0-9+\-*/().%^!]$/.test(e.key)) {
         append(e.key);
       }
     };
@@ -186,10 +186,10 @@ const Calculator = () => {
                       className="w-full text-left p-3 rounded-lg bg-muted hover:bg-secondary transition"
                     >
                       <div className="text-xs text-muted-foreground truncate">
-                        {h.expr}
+                        {groupDigits(h.expr)}
                       </div>
                       <div className="text-lg font-semibold truncate">
-                        = {h.result}
+                        = {groupDigits(h.result)}
                       </div>
                     </button>
                   ))}
@@ -349,7 +349,7 @@ function groupDigits(s: string) {
 }
 
 function normalize(s: string) {
-  return s.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
+  return s.replace(/,/g, "").replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
 }
 
 function buildScope(rad: boolean) {
