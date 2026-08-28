@@ -8,7 +8,7 @@ const Index = () => {
   return (
     <>
       <Calculator />
-      <div className="fixed bottom-3 left-1/2 -translate-x-1/2 flex gap-2 text-xs">
+      <div className="fixed bottom-2 left-1/2 z-20 rounded-full bg-background/80 backdrop-blur px-2 py-1 -translate-x-1/2 flex gap-2 text-xs">
         <PolicyDialog
           title="Privacy Policy"
           trigger="Privacy"
