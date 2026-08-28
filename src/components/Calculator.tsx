@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { evaluate } from "mathjs";
 import { Moon, Sun, Delete, History as HistoryIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -337,6 +337,16 @@ const Calculator = () => {
     </main>
   );
 };
+
+function groupDigits(s: string) {
+  if (!s) return "";
+  if (/e[+-]?\d/i.test(s)) return s;
+  return s.replace(/\d+(\.\d+)?/g, (m) => {
+    const [int, dec] = m.split(".");
+    const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return dec !== undefined ? `${grouped}.${dec}` : grouped;
+  });
+}
 
 function normalize(s: string) {
   return s.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
