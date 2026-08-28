@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { evaluate } from "mathjs";
 import { Moon, Sun, Delete, History as HistoryIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -95,7 +95,7 @@ const Calculator = () => {
         back();
       } else if (e.key === "Escape") {
         clear();
-      } else if (/^[0-9+\-*/().,%^]$/.test(e.key)) {
+      } else if (/^[0-9+\-*/().%^!]$/.test(e.key)) {
         append(e.key);
       }
     };
@@ -103,7 +103,28 @@ const Calculator = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, [equals]);
 
+  const exprRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (exprRef.current) exprRef.current.scrollLeft = exprRef.current.scrollWidth;
+  }, [expr]);
+  useEffect(() => {
+    if (resultRef.current) resultRef.current.scrollLeft = resultRef.current.scrollWidth;
+  }, [result]);
+
+  const shown = groupDigits(result) || groupDigits(expr);
+  const resultSizeClass =
+    shown.length > 22
+      ? "text-xl"
+      : shown.length > 16
+      ? "text-2xl"
+      : shown.length > 11
+      ? "text-3xl"
+      : "text-4xl sm:text-5xl";
+
   const fnLabel = (a: string, b: string) => (isInv ? b : a);
+
 
   const sciButtons: { label: string; onClick: () => void; cls?: string }[] = [
     { label: isInv ? "x³" : "x²", onClick: () => append(isInv ? "^3" : "^2") },
@@ -125,7 +146,7 @@ const Calculator = () => {
   ];
 
   return (
-    <main className="min-h-[100dvh] flex items-center justify-center p-4 sm:p-6">
+    <main className="min-h-[100dvh] flex items-center justify-center p-4 sm:p-6 pb-24">
       <div className="w-full max-w-md mx-auto">
         <header className="flex items-center justify-between mb-4 px-1">
           <h1 className="text-xl font-semibold tracking-tight">
@@ -165,10 +186,10 @@ const Calculator = () => {
                       className="w-full text-left p-3 rounded-lg bg-muted hover:bg-secondary transition"
                     >
                       <div className="text-xs text-muted-foreground truncate">
-                        {h.expr}
+                        {groupDigits(h.expr)}
                       </div>
                       <div className="text-lg font-semibold truncate">
-                        = {h.result}
+                        = {groupDigits(h.result)}
                       </div>
                     </button>
                   ))}
@@ -212,12 +233,19 @@ const Calculator = () => {
               {memory !== 0 && <span className="px-2 py-0.5 rounded bg-white/10">M</span>}
             </div>
           </div>
-          <div className="min-h-[2rem] text-right text-lg break-all opacity-80">
-            {expr || "0"}
+          <div
+            ref={exprRef}
+            className="min-h-[1.75rem] text-right text-base opacity-80 overflow-x-auto whitespace-nowrap no-scrollbar"
+          >
+            {groupDigits(expr) || "0"}
           </div>
-          <div className="text-right text-4xl sm:text-5xl font-semibold tracking-tight break-all min-h-[3.5rem]">
-            {result || (expr ? "" : "0")}
+          <div
+            ref={resultRef}
+            className={`text-right font-semibold tracking-tight min-h-[3.5rem] flex items-center justify-end overflow-x-auto whitespace-nowrap no-scrollbar ${resultSizeClass}`}
+          >
+            {groupDigits(result) || (expr ? "" : "0")}
           </div>
+
         </section>
 
         <div className="grid grid-cols-5 gap-2 mb-2">
@@ -310,8 +338,18 @@ const Calculator = () => {
   );
 };
 
+function groupDigits(s: string) {
+  if (!s) return "";
+  if (/e[+-]?\d/i.test(s)) return s;
+  return s.replace(/\d+(\.\d+)?/g, (m) => {
+    const [int, dec] = m.split(".");
+    const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return dec !== undefined ? `${grouped}.${dec}` : grouped;
+  });
+}
+
 function normalize(s: string) {
-  return s.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
+  return s.replace(/,/g, "").replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-");
 }
 
 function buildScope(rad: boolean) {
