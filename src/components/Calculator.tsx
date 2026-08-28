@@ -103,7 +103,28 @@ const Calculator = () => {
     return () => window.removeEventListener("keydown", onKey);
   }, [equals]);
 
+  const exprRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (exprRef.current) exprRef.current.scrollLeft = exprRef.current.scrollWidth;
+  }, [expr]);
+  useEffect(() => {
+    if (resultRef.current) resultRef.current.scrollLeft = resultRef.current.scrollWidth;
+  }, [result]);
+
+  const shown = groupDigits(result) || groupDigits(expr);
+  const resultSizeClass =
+    shown.length > 22
+      ? "text-xl"
+      : shown.length > 16
+      ? "text-2xl"
+      : shown.length > 11
+      ? "text-3xl"
+      : "text-4xl sm:text-5xl";
+
   const fnLabel = (a: string, b: string) => (isInv ? b : a);
+
 
   const sciButtons: { label: string; onClick: () => void; cls?: string }[] = [
     { label: isInv ? "x³" : "x²", onClick: () => append(isInv ? "^3" : "^2") },
