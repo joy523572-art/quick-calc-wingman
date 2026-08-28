@@ -212,12 +212,19 @@ const Calculator = () => {
               {memory !== 0 && <span className="px-2 py-0.5 rounded bg-white/10">M</span>}
             </div>
           </div>
-          <div className="min-h-[2rem] text-right text-lg break-all opacity-80">
-            {expr || "0"}
+          <div
+            ref={exprRef}
+            className="min-h-[1.75rem] text-right text-base opacity-80 overflow-x-auto whitespace-nowrap no-scrollbar"
+          >
+            {groupDigits(expr) || "0"}
           </div>
-          <div className="text-right text-4xl sm:text-5xl font-semibold tracking-tight break-all min-h-[3.5rem]">
-            {result || (expr ? "" : "0")}
+          <div
+            ref={resultRef}
+            className={`text-right font-semibold tracking-tight min-h-[3.5rem] flex items-center justify-end overflow-x-auto whitespace-nowrap no-scrollbar ${resultSizeClass}`}
+          >
+            {groupDigits(result) || (expr ? "" : "0")}
           </div>
+
         </section>
 
         <div className="grid grid-cols-5 gap-2 mb-2">
