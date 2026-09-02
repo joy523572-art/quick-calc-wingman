@@ -12,4 +12,12 @@ ext {
     junitVersion = '4.13.2'
     androidxJunitVersion = '1.2.1'
     androidxEspressoCoreVersion = '3.6.1'
+
+    // Native module stack
+    coroutinesVersion = '1.8.1'
+    lifecycleVersion = '2.8.6'
+    okhttpVersion = '4.12.0'
+    retrofitVersion = '2.11.0'
+    roomVersion = '2.6.1'
+    firebaseBomVersion = '33.5.1'
 }
