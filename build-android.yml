@@ -1,0 +1,30 @@
+name: Build Android Release
+on: [workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: mkdir -p android/keystore
+      - run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/keystore/release-key.jks
+      - run: |
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/keystore.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/keystore.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/keystore.properties
+          echo "storeFile=keystore/release-key.jks" >> android/keystore.properties
+      - run: cd android && ./gradlew bundleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
