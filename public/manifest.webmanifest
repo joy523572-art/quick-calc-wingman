@@ -1,0 +1,62 @@
+{
+  "id": "/",
+  "name": "Nume: Scientific Calculator Pro",
+  "short_name": "Nume",
+  "description": "Free, offline scientific calculator with trigonometry, logarithms, memory, history, dark mode and full keyboard support. No ads, no tracking.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#0b0b12",
+  "theme_color": "#7c3aed",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["utilities", "education", "productivity"],
+  "prefer_related_applications": false,
+  "iarc_rating_id": "",
+  "version": "1.0.1",
+  "version_code": 6,
+  "package_name": "scientific.calculator.cm",
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "scientific.calculator.cm",
+      "url": "https://play.google.com/store/apps/details?id=scientific.calculator.cm"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New calculation",
+      "short_name": "Calculate",
+      "url": "/",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}
