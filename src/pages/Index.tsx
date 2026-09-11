@@ -3,6 +3,7 @@ import Calculator from "@/components/Calculator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { requestInAppReview } from "@/lib/inAppReview";
 
 const Index = () => {
   return (
@@ -16,6 +17,14 @@ const Index = () => {
         />
         <PolicyDialog title="About" trigger="About" body={<About />} />
         <PolicyDialog title="Data & Account" trigger="Data" body={<DataSafety />} />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-muted-foreground"
+          onClick={() => void requestInAppReview()}
+        >
+          Rate
+        </Button>
       </div>
     </>
   );

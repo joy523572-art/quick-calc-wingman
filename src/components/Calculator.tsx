@@ -9,6 +9,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { noteSuccessfulCalculation } from "@/lib/inAppReview";
 
 type HistoryItem = { expr: string; result: string };
 
@@ -79,6 +80,7 @@ const Calculator = () => {
         return;
       }
       setHistory((h) => [{ expr, result: formatted }, ...h].slice(0, 50));
+      noteSuccessfulCalculation();
       setExpr(formatted);
       setResult("");
     } catch {
