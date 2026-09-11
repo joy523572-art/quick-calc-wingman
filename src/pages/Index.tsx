@@ -16,6 +16,14 @@ const Index = () => {
         />
         <PolicyDialog title="About" trigger="About" body={<About />} />
         <PolicyDialog title="Data & Account" trigger="Data" body={<DataSafety />} />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-muted-foreground"
+          onClick={() => void requestInAppReview()}
+        >
+          Rate
+        </Button>
       </div>
     </>
   );
