@@ -9,6 +9,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { noteSuccessfulCalculation } from "@/lib/inAppReview";
 
 type HistoryItem = { expr: string; result: string };
 
