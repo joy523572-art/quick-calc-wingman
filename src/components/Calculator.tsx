@@ -79,6 +79,7 @@ const Calculator = () => {
         return;
       }
       setHistory((h) => [{ expr, result: formatted }, ...h].slice(0, 50));
+      noteSuccessfulCalculation();
       setExpr(formatted);
       setResult("");
     } catch {
