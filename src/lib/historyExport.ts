@@ -23,7 +23,7 @@ export function makeHistoryPdf(records: HistoryRecord[]) {
     pageRefs.push(pageId);
     const text = [
       "BT", "/F1 14 Tf", "50 790 Td", `(Scientific Calculator Pro - History) Tj`,
-      "/F1 9 Tf", "0 -22 Td", `(Exported ${pdfEscape(new Date().toLocaleString())}) Tj", "0 -20 Td",
+      "/F1 9 Tf", "0 -22 Td", `(Exported ${pdfEscape(new Date().toLocaleString())}) Tj`, "0 -20 Td",
       ...pageLines.flatMap((line, lineIndex) => lineIndex === 0 ? [`(${pdfEscape(line)}) Tj`] : ["0 -14 Td", `(${pdfEscape(line)}) Tj`]),
       "ET",
     ].join("\n");
