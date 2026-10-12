@@ -3,16 +3,29 @@ import { parse } from "mathjs";
 type Polynomial = [number, number, number];
 export type EquationSolution = { summary: string; steps: string[]; roots: number[] };
 
+type MathNodeLike = {
+  isConstantNode?: boolean;
+  value?: unknown;
+  isSymbolNode?: boolean;
+  name?: string;
+  isOperatorNode?: boolean;
+  op?: string;
+  args?: MathNodeLike[];
+  isParenthesisNode?: boolean;
+  content?: MathNodeLike;
+};
+
 const tidy = (value: number) => (Math.abs(value) < 1e-10 ? 0 : value);
 const format = (value: number) => String(Number(tidy(value).toPrecision(10)));
 
 function polynomialFromExpression(expression: string): Polynomial {
-  const node = parse(expression) as any;
-  const visit = (part: any): Polynomial => {
+  const node = parse(expression) as unknown as MathNodeLike;
+  const visit = (part: MathNodeLike): Polynomial => {
+    if (part.isParenthesisNode && part.content) return visit(part.content);
     if (part.isConstantNode && typeof part.value === "number") return [part.value, 0, 0];
     if (part.isSymbolNode && part.name === "x") return [0, 1, 0];
-    if (part.isOperatorNode) {
-      const args = part.args as any[];
+    if (part.isOperatorNode && part.args) {
+      const args = part.args;
       if (part.op === "+" || part.op === "-") {
         if (args.length === 1) return part.op === "-" ? visit(args[0]).map((n) => -n) as Polynomial : visit(args[0]);
         const left = visit(args[0]);
@@ -68,7 +81,12 @@ export function solveEquation(input: string): EquationSolution {
     .replace(/÷/g, "/")
     .replace(/,/g, "")
     .replace(/(\d)(x)/gi, "$1*$2")
-    .replace(/(x)(\d)/gi, "$1*$2");
+    .replace(/(x)(\d)/gi, "$1*$2")
+    .replace(/(\d)\(/g, "$1*(")
+    .replace(/\)(\d)/g, ")*$1")
+    .replace(/\)(x)/gi, ")*$1")
+    .replace(/(x)\(/gi, "$1*(")
+    .replace(/\)\(/g, ")*(");
   const sides = normalized.split("=");
   if (sides.length !== 2 || !sides[0].trim() || !sides[1].trim()) {
     throw new Error("Enter one equation with an equals sign, for example 2x+5=15.");

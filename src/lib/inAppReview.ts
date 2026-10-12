@@ -75,7 +75,11 @@ export const requestInAppReview = async (): Promise<boolean> => {
   }
 
   if (typeof window !== "undefined") {
-    window.open(PLAY_URL, "_blank", "noopener,noreferrer");
+    try {
+      window.open(PLAY_URL, "_blank", "noopener,noreferrer");
+    } catch {
+      // Safely ignored in restricted iframe or sandbox environments
+    }
     return false;
   }
   return false;

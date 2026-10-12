@@ -13,4 +13,9 @@ describe("equation solver", () => {
     expect(answer.roots).toEqual([3, 2]);
     expect(answer.steps.some((step) => step.includes("discriminant"))).toBe(true);
   });
+
+  it("handles parentheses and implicit multiplication", () => {
+    const answer = solveEquation("2(x+3)=16");
+    expect(answer.roots).toEqual([5]);
+  });
 });

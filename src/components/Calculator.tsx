@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { evaluate } from "mathjs";
-import { Moon, Sun, Delete, History as HistoryIcon, Trash2 } from "lucide-react";
+import { Moon, Sun, Delete, History as HistoryIcon, Trash2, FileDown, Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -10,20 +10,37 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { noteSuccessfulCalculation } from "@/lib/inAppReview";
+import {
+  canSaveFreeHistory,
+  consumeDailyHistorySave,
+  getDailyHistorySaveCount,
+  FREE_LIMITS,
+} from "@/lib/freemium";
+import { downloadHistoryPdf } from "@/lib/historyExport";
+import { readCalculationHistory, broadcastHistoryUpdate, type HistoryRecord } from "@/lib/historyStore";
 
-type HistoryItem = { expr: string; result: string };
+interface CalculatorProps {
+  isPro?: boolean;
+  onRequestUpgrade?: (feature: string) => void;
+  hideHeader?: boolean;
+}
 
 const STORAGE_HISTORY = "calc.history.v1";
 const STORAGE_THEME = "calc.theme.v1";
 
-const Calculator = () => {
+const Calculator: React.FC<CalculatorProps> = ({
+  isPro = false,
+  onRequestUpgrade,
+  hideHeader = false,
+}) => {
   const [expr, setExpr] = useState("");
   const [result, setResult] = useState("");
   const [isRad, setIsRad] = useState(true);
   const [isInv, setIsInv] = useState(false);
   const [memory, setMemory] = useState(0);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [dark, setDark] = useState(false);
+  const [saveQuotaNotice, setSaveQuotaNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_THEME);
@@ -39,9 +56,11 @@ const Calculator = () => {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_HISTORY);
-      if (raw) setHistory(JSON.parse(raw));
-    } catch {}
+      const records = readCalculationHistory();
+      setHistory(records);
+    } catch {
+      // ignore parse error
+    }
   }, []);
 
   useEffect(() => {
@@ -66,6 +85,7 @@ const Calculator = () => {
   const clear = () => {
     setExpr("");
     setResult("");
+    setSaveQuotaNotice(null);
   };
   const back = () => setExpr((e) => e.slice(0, -1));
 
@@ -79,14 +99,30 @@ const Calculator = () => {
         setResult("Error");
         return;
       }
-      setHistory((h) => [{ expr, result: formatted }, ...h].slice(0, 50));
+
+      // Calculations on the scientific calculator are ALWAYS unlimited.
+      // Saving to persistent history enforces daily limit for free users.
+      const now = new Date().toISOString();
+      const canSave = isPro || canSaveFreeHistory();
+
+      if (canSave) {
+        if (!isPro) {
+          consumeDailyHistorySave();
+        }
+        setHistory((h) => [{ expr, result: formatted, createdAt: now }, ...h].slice(0, 50));
+        broadcastHistoryUpdate();
+        setSaveQuotaNotice(null);
+      } else {
+        setSaveQuotaNotice("Daily history limit reached (3/3). Upgrade to PRO for unlimited history.");
+      }
+
       noteSuccessfulCalculation();
       setExpr(formatted);
       setResult("");
     } catch {
       setResult("Error");
     }
-  }, [expr, isRad]);
+  }, [expr, isRad, isPro]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -147,67 +183,130 @@ const Calculator = () => {
     { label: "mod", onClick: () => append(" mod ") },
   ];
 
-  return (
-    <main className="min-h-[100dvh] flex items-center justify-center p-4 sm:p-6 pb-24">
-      <div className="w-full max-w-md mx-auto">
-        <header className="flex items-center justify-between mb-4 px-1">
-          <h1 className="text-xl font-semibold tracking-tight">
-            Sci<span className="text-primary">Calc</span>
-          </h1>
-          <div className="flex items-center gap-1">
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="History">
-                  <HistoryIcon className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent>
-                <SheetHeader>
-                  <SheetTitle className="flex items-center justify-between">
-                    History
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setHistory([])}
-                      aria-label="Clear history"
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" /> Clear
-                    </Button>
-                  </SheetTitle>
-                </SheetHeader>
-                <div className="mt-4 space-y-2 overflow-y-auto max-h-[80vh] pr-2">
-                  {history.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      No calculations yet.
-                    </p>
-                  )}
-                  {history.map((h, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setExpr(h.result)}
-                      className="w-full text-left p-3 rounded-lg bg-muted hover:bg-secondary transition"
-                    >
-                      <div className="text-xs text-muted-foreground truncate">
-                        {groupDigits(h.expr)}
-                      </div>
-                      <div className="text-lg font-semibold truncate">
-                        = {groupDigits(h.result)}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </SheetContent>
-            </Sheet>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setDark((d) => !d)}
-              aria-label="Toggle theme"
+  const historySheet = (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button
+          variant="ghost"
+          size={hideHeader ? "sm" : "icon"}
+          className={hideHeader ? "h-7 text-xs gap-1 px-2 text-muted-foreground hover:text-foreground" : ""}
+          aria-label="History"
+        >
+          <HistoryIcon className="h-4 w-4" />
+          {hideHeader && <span>History</span>}
+        </Button>
+      </SheetTrigger>
+      <SheetContent className="flex flex-col">
+        <SheetHeader>
+          <SheetTitle className="flex items-center justify-between">
+            <span>History</span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1"
+                onClick={() => {
+                  if (isPro) {
+                    downloadHistoryPdf(history);
+                  } else {
+                    onRequestUpgrade?.("PDF History Export");
+                  }
+                }}
+                disabled={history.length === 0}
+                aria-label="Export history to PDF"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                PDF {!isPro && <Lock className="h-3 w-3 ml-0.5 text-muted-foreground" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-muted-foreground"
+                onClick={() => setHistory([])}
+                aria-label="Clear history"
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear
+              </Button>
+            </div>
+          </SheetTitle>
+        </SheetHeader>
+
+        <div className="text-xs px-1 py-1.5 rounded-lg bg-muted/60 text-muted-foreground flex items-center justify-between mt-2">
+          <span>
+            {isPro ? (
+              <span className="text-primary font-medium flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> PRO: Unlimited Saves
+              </span>
+            ) : (
+              `Free saves today: ${getDailyHistorySaveCount()} / ${FREE_LIMITS.dailyHistorySaves}`
+            )}
+          </span>
+          {!isPro && (
+            <button
+              onClick={() => onRequestUpgrade?.("History Saving")}
+              className="text-primary font-medium hover:underline text-[11px]"
             >
-              {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
+              Go Unlimited
+            </button>
+          )}
+        </div>
+
+        <div className="mt-2 space-y-2 overflow-y-auto flex-1 pr-1">
+          {history.length === 0 && (
+            <p className="text-sm text-muted-foreground pt-4 text-center">
+              No calculations saved yet.
+            </p>
+          )}
+          {history.map((h, i) => (
+            <button
+              key={i}
+              onClick={() => setExpr(h.result)}
+              className="w-full text-left p-3 rounded-lg bg-muted hover:bg-secondary transition"
+            >
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-0.5">
+                <span className="truncate">{groupDigits(h.expr)}</span>
+                {h.createdAt && (
+                  <span className="text-[10px] opacity-75 shrink-0 ml-2">
+                    {new Date(h.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+              </div>
+              <div className="text-lg font-semibold truncate">
+                = {groupDigits(h.result)}
+              </div>
+            </button>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+
+  return (
+    <div className={hideHeader ? "w-full max-w-md mx-auto" : "min-h-[100dvh] flex items-center justify-center p-4 sm:p-6 pb-24"}>
+      <div className="w-full max-w-md mx-auto">
+        {!hideHeader ? (
+          <header className="flex items-center justify-between mb-4 px-1">
+            <h1 className="text-xl font-semibold tracking-tight">
+              Sci<span className="text-primary">Calc</span>
+            </h1>
+            <div className="flex items-center gap-1">
+              {historySheet}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDark((d) => !d)}
+                aria-label="Toggle theme"
+              >
+                {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
+            </div>
+          </header>
+        ) : (
+          <div className="flex items-center justify-between mb-2 px-1">
+            <span className="text-xs font-medium text-muted-foreground">Standard Calculation</span>
+            {historySheet}
           </div>
-        </header>
+        )}
 
         <section
           className="rounded-3xl p-5 sm:p-6 mb-4 text-display-foreground"
@@ -248,6 +347,18 @@ const Calculator = () => {
             {groupDigits(result) || (expr ? "" : "0")}
           </div>
 
+          {saveQuotaNotice && (
+            <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-amber-300">
+              <span className="truncate">{saveQuotaNotice}</span>
+              <button
+                type="button"
+                onClick={() => onRequestUpgrade?.("Unlimited History Saves")}
+                className="underline ml-2 shrink-0 font-medium hover:text-white"
+              >
+                Go PRO
+              </button>
+            </div>
+          )}
         </section>
 
         <div className="grid grid-cols-5 gap-2 mb-2">
@@ -336,7 +447,7 @@ const Calculator = () => {
           <p>Works offline · No data collected · No account required</p>
         </footer>
       </div>
-    </main>
+    </div>
   );
 };
 
@@ -368,7 +479,7 @@ function buildScope(rad: boolean) {
   };
 }
 
-function formatResult(r: any): string {
+function formatResult(r: unknown): string {
   if (typeof r === "number") {
     if (!isFinite(r)) return "Error";
     const rounded = Math.round(r * 1e12) / 1e12;

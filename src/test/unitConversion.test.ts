@@ -13,4 +13,10 @@ describe("unit conversions", () => {
   it("applies a supplied live currency exchange rate", () => {
     expect(convertMeasurement(10, "currency", "USD", "EUR", 0.9)).toBe(9);
   });
+
+  it("handles offline currency conversion using fallback table", () => {
+    const converted = convertMeasurement(10, "currency", "USD", "EUR");
+    expect(converted).toBeGreaterThan(5);
+    expect(converted).toBeLessThan(15);
+  });
 });
