@@ -1,14 +1,15 @@
 import React, { useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Check, Sparkles, AlertCircle, Loader2 } from "lucide-react";
-import { SUBSCRIPTIONS } from "@/lib/playBilling";
+import { Sparkles, Check, ShieldCheck, Loader2, CheckCircle2 } from "lucide-react";
+import {
+  GOOGLE_PLAY_PRODUCTS,
+  PRODUCT_ID_MONTHLY,
+  PRODUCT_ID_WEEKLY,
+  type SubscriptionProductId,
+  requestPlayBillingPurchase,
+  restorePlayBillingPurchases,
+} from "@/lib/playBilling";
 import { useSubscription } from "@/hooks/useSubscription";
 
 interface SubscriptionModalProps {
@@ -20,186 +21,157 @@ interface SubscriptionModalProps {
 export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   open,
   onOpenChange,
-  featureName,
+  featureName = "Nume Pro",
 }) => {
-  const { isPro, purchase, restore } = useSubscription();
-  const [selectedPlan, setSelectedPlan] = useState<string>("premium_monthly");
+  const { isPro, setIsPro } = useSubscription();
+  const [selectedProductId, setSelectedProductId] = useState<SubscriptionProductId>(PRODUCT_ID_MONTHLY);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: "error" | "info"; text: string } | null>(null);
 
-  const handleSubscribe = async () => {
+  const selectedProduct =
+    GOOGLE_PLAY_PRODUCTS.find((p) => p.productId === selectedProductId) || GOOGLE_PLAY_PRODUCTS[0];
+
+  const handlePurchase = async () => {
     setLoading(true);
-    setFeedback(null);
-    try {
-      await purchase(selectedPlan);
-      setFeedback({ type: "info", text: "Subscription activated successfully!" });
-      setTimeout(() => onOpenChange(false), 1200);
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Purchase could not be completed.",
-      });
-    } finally {
-      setLoading(false);
+    const result = await requestPlayBillingPurchase(selectedProductId);
+    if (result.success) {
+      setIsPro(true);
+      onOpenChange(false);
     }
+    setLoading(false);
   };
 
   const handleRestore = async () => {
     setRestoring(true);
-    setFeedback(null);
-    try {
-      const active = await restore();
-      if (active) {
-        setFeedback({ type: "info", text: "Subscription restored successfully!" });
-        setTimeout(() => onOpenChange(false), 1200);
-      } else {
-        setFeedback({
-          type: "error",
-          text: "No active Google Play subscription found for your account.",
-        });
-      }
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Unable to restore purchases.",
-      });
-    } finally {
-      setRestoring(false);
+    const success = await restorePlayBillingPurchases();
+    if (success) {
+      setIsPro(true);
+      onOpenChange(false);
     }
+    setRestoring(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-6 bg-card text-card-foreground border border-border shadow-2xl rounded-2xl">
-        <DialogHeader className="text-left space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold w-fit mb-1">
-            <Sparkles className="w-3.5 h-3.5" />
-            SciCalc Pro
+      <DialogContent className="max-w-md rounded-3xl p-6">
+        <DialogHeader className="text-center space-y-2">
+          <div className="mx-auto w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-1">
+            <Sparkles className="w-6 h-6" />
           </div>
           <DialogTitle className="text-xl font-bold tracking-tight">
-            {featureName ? `Unlock Unlimited ${featureName}` : "Unlock Pro Features"}
+            Unlock {featureName}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Get unlimited access to all advanced mathematical tools and export features.
+            Free trial limit reached. Upgrade to unlock all calculator modes, graphing, equation solver, converter, OCR camera scanning, and voice dictation permanently.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 my-2">
-          {/* Features list */}
-          <ul className="space-y-2 text-xs">
-            <li className="flex items-center gap-2">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-              <span><strong>Unlimited History Saves</strong> with timestamp records</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-              <span><strong>Export History to PDF</strong> anytime</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-              <span><strong>Interactive Graphing Calculator</strong> with coordinate tracing</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-              <span><strong>Step-by-Step Equation Solver</strong> (Linear & Quadratic)</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-              <span><strong>Live Currency & Unit Converter</strong> (Length, Weight, Temp)</span>
-            </li>
-            <li className="flex items-center gap-2 text-muted-foreground">
-              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-              <span>Standard scientific calculations always 100% free & unlimited</span>
-            </li>
-          </ul>
-
-          {/* Pricing Options */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            {SUBSCRIPTIONS.map((plan) => {
-              const selected = selectedPlan === plan.id;
-              return (
-                <button
-                  key={plan.id}
-                  type="button"
-                  onClick={() => setSelectedPlan(plan.id)}
-                  className={`p-3 rounded-xl border text-left transition-all relative ${
-                    selected
-                      ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                      : "border-border bg-background hover:bg-muted/50"
-                  }`}
-                >
-                  {plan.id === "premium_monthly" && (
-                    <span className="absolute -top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary text-primary-foreground">
-                      Best Value
-                    </span>
-                  )}
-                  <div className="text-xs font-semibold text-foreground">{plan.cadence}</div>
-                  <div className="text-base font-bold text-foreground mt-0.5">{plan.price}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">Google Play</div>
-                </button>
-              );
-            })}
+        {/* Paywall Banner: Price & Billing Period */}
+        <div className="p-3 rounded-2xl bg-primary/5 border border-primary/20 text-center space-y-1 my-1">
+          <div className="text-xs font-bold text-foreground">
+            $6/monthly and $3 weekly. billed via Google play
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Choose your preferred plan below. Cancel anytime in Google Play Store settings.
+          </p>
+        </div>
 
-          {feedback && (
-            <div
-              className={`p-2.5 rounded-lg text-xs flex items-start gap-2 ${
-                feedback.type === "error"
-                  ? "bg-destructive/10 text-destructive border border-destructive/20"
-                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-              }`}
-            >
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{feedback.text}</span>
+        {/* Subscription Plan Options */}
+        <div className="grid grid-cols-2 gap-2.5 my-2">
+          {GOOGLE_PLAY_PRODUCTS.map((prod) => {
+            const isSelected = selectedProductId === prod.productId;
+            return (
+              <button
+                key={prod.productId}
+                type="button"
+                onClick={() => setSelectedProductId(prod.productId)}
+                className={`p-3 rounded-2xl border text-left transition relative flex flex-col justify-between ${
+                  isSelected
+                    ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+                    : "border-border bg-muted/40 hover:bg-muted/70"
+                }`}
+              >
+                {prod.popular && (
+                  <span className="absolute -top-2.5 right-2 px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary text-primary-foreground shadow-xs">
+                    Popular
+                  </span>
+                )}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-xs text-foreground">{prod.title}</span>
+                    {isSelected && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                  </div>
+                  <div className="text-base font-extrabold text-primary">{prod.priceText}</div>
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-2 border-t border-border/50 pt-1.5">
+                  Billed {prod.billingPeriod} via Google Play
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* What's Included */}
+        <div className="p-3 rounded-2xl bg-muted/40 border border-border/60 space-y-1.5 text-xs">
+          <span className="font-semibold text-[11px] text-muted-foreground block">
+            Everything included in Unlimited Access:
+          </span>
+          <div className="grid grid-cols-1 gap-1 text-[11px]">
+            <div className="flex items-center gap-2">
+              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Unlimited 2D Graphing Calculator & Trace</span>
             </div>
-          )}
+            <div className="flex items-center gap-2">
+              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Step-by-step Linear & Quadratic Equation Solver</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Currency, Length, Weight & Temp Converter</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>OCR Camera Math Scanning & Voice Dictation</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>PDF Report Export & Unlimited Calculation History</span>
+            </div>
+          </div>
+        </div>
 
-          {/* Actions */}
-          <div className="space-y-2 pt-1">
-            <Button
-              className="w-full h-11 text-sm font-semibold rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={handleSubscribe}
-              disabled={loading || restoring || isPro}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Connecting to Google Play...
-                </>
-              ) : isPro ? (
-                "Pro Access Active"
-              ) : (
-                `Subscribe on Google Play (${SUBSCRIPTIONS.find((p) => p.id === selectedPlan)?.price})`
-              )}
-            </Button>
+        {/* Action Button: Both product IDs call and use "Get Unlimited Access" */}
+        <div className="space-y-2 pt-1">
+          <Button
+            className="w-full h-12 rounded-xl font-bold text-sm gap-2 shadow-lg shadow-primary/20 bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={() => void handlePurchase()}
+            disabled={loading || isPro}
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            {isPro ? "PRO Active" : "Get Unlimited Access"}
+          </Button>
 
+          <div className="flex items-center justify-between px-1 text-[11px] text-muted-foreground">
+            <span>Selected: {selectedProduct.priceText}</span>
             <Button
               variant="ghost"
               size="sm"
-              className="w-full text-xs text-muted-foreground hover:text-foreground h-8"
-              onClick={handleRestore}
-              disabled={loading || restoring}
+              className="h-7 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+              onClick={() => void handleRestore()}
+              disabled={restoring}
             >
-              {restoring ? "Checking purchases..." : "Restore Google Play Purchases"}
+              {restoring ? (
+                <Loader2 className="w-3 h-3 animate-spin mr-1" />
+              ) : (
+                <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+              )}
+              Restore Google Play Purchase
             </Button>
           </div>
-
-          <p className="text-[10px] text-muted-foreground text-center leading-normal">
-            Billed through your Google Play account. Subscriptions renew automatically unless cancelled in Google Play Subscriptions at least 24 hours before expiration.
-          </p>
         </div>
       </DialogContent>
     </Dialog>

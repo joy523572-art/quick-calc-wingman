@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="40" fill="#7c3aed"/>
+  <path d="M52 64h24v64H52zm36 0h24v64H88zm36 0h16v64h-16z" fill="#ffffff" opacity="0.9"/>
+  <circle cx="96" cy="96" r="68" fill="none" stroke="#ffffff" stroke-width="8" stroke-dasharray="16 8"/>
+  <text x="96" y="112" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="44" font-weight="900">N</text>
+</svg>
