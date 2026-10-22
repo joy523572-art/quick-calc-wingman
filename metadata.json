@@ -1,7 +1,0 @@
-{
-  "name": "Nume: Scientific Calculator Pro",
-  "description": "Free, offline scientific calculator with trigonometry, logarithms, history, dark mode and full keyboard support. No ads, no tracking.",
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

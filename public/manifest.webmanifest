@@ -1,93 +1,23 @@
 {
+  "id": "/",
   "name": "Nume: Scientific Calculator Pro",
   "short_name": "Nume",
-  "id": "scientific.calculator.cm",
-  "package_name": "scientific.calculator.cm",
-  "version_code": 9,
-  "version": "1.0.9",
-  "description": "Free, offline scientific calculator with trigonometry, logarithms, history, dark mode and full keyboard support. No ads, no tracking.",
+  "description": "Free, offline scientific calculator with trigonometry, logarithms, memory, history, dark mode and full keyboard support. No ads, no tracking.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": [
-    "standalone",
-    "minimal-ui",
-    "window-controls-overlay"
-  ],
-  "orientation": "portrait-primary",
-  "background_color": "#09090b",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#0b0b12",
   "theme_color": "#7c3aed",
   "lang": "en",
   "dir": "ltr",
-  "categories": [
-    "education",
-    "productivity",
-    "utilities"
-  ],
-  "icons": [
-    {
-      "src": "/icons/icon-192.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-512.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Scientific Calculator",
-      "short_name": "Calculator",
-      "description": "Open Nume Scientific Calculator",
-      "url": "/?tab=calc",
-      "icons": [
-        {
-          "src": "/icons/icon-192.svg",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Graphing Calculator",
-      "short_name": "Graph",
-      "description": "Open 2D Graphing Suite",
-      "url": "/?tab=graph",
-      "icons": [
-        {
-          "src": "/icons/icon-192.svg",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Equation Solver",
-      "short_name": "Equations",
-      "description": "Open Linear & Quadratic Solver",
-      "url": "/?tab=equations",
-      "icons": [
-        {
-          "src": "/icons/icon-192.svg",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Unit Converter",
-      "short_name": "Converter",
-      "description": "Open Currency, Unit & Weight Converter",
-      "url": "/?tab=converter",
-      "icons": [
-        {
-          "src": "/icons/icon-192.svg",
-          "sizes": "192x192"
-        }
-      ]
-    }
-  ],
+  "categories": ["utilities", "education", "productivity"],
+  "prefer_related_applications": false,
+  "iarc_rating_id": "",
+  "version": "1.0.1",
+  "version_code": 6,
+  "package_name": "scientific.calculator.cm",
   "related_applications": [
     {
       "platform": "play",
@@ -95,5 +25,38 @@
       "url": "https://play.google.com/store/apps/details?id=scientific.calculator.cm"
     }
   ],
-  "prefer_related_applications": false
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New calculation",
+      "short_name": "Calculate",
+      "url": "/",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
 }
