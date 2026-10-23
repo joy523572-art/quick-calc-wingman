@@ -1,10 +1,10 @@
 import type { HistoryRecord } from "./historyStore";
 
 const ascii = (text: string) => text
-  .replaceAll("×", "x").replaceAll("÷", "/").replaceAll("−", "-")
-  .replaceAll("π", "pi").replaceAll("Δ", "D").replaceAll("√", "sqrt").replaceAll("±", "+/-").replaceAll("²", "^2").replaceAll("³", "^3")
+  .split("×").join("x").split("÷").join("/").split("−").join("-")
+  .split("π").join("pi").split("Δ").join("D").split("√").join("sqrt").split("±").join("+/-").split("²").join("^2").split("³").join("^3")
   .replace(/[^\x20-\x7E]/g, "?");
-const pdfEscape = (text: string) => ascii(text).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+const pdfEscape = (text: string) => ascii(text).split("\\").join("\\\\").split("(").join("\\(").split(")").join("\\)");
 
 export function makeHistoryPdf(records: HistoryRecord[]) {
   return makeTextPdf("Scientific Calculator Pro - History", records.flatMap((item) => [
