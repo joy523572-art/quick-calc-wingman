@@ -11,7 +11,8 @@ import {
 } from "@/components/ui/sheet";
 import { noteSuccessfulCalculation } from "@/lib/inAppReview";
 import { downloadHistoryPdf } from "@/lib/historyExport";
-import { canSaveFreeHistory, consumeDailyHistorySave } from "@/lib/freemium";
+import { canSaveHistory } from "@/lib/freemium";
+import { PremiumLock } from "@/components/PremiumLock";
 
 export type HistoryItem = { expr: string; result: string };
 
@@ -75,10 +76,8 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
         return;
       }
 
-      // Check free daily history saves limit
-      const canSave = isPro || canSaveFreeHistory();
-      if (canSave) {
-        if (!isPro) consumeDailyHistorySave();
+      // History saving is premium-only; calculating stays unlimited for everyone.
+      if (canSaveHistory(isPro)) {
         setHistory((h) => [{ expr, result: formatted }, ...h].slice(0, 50));
       }
 
@@ -91,8 +90,9 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
   }, [expr, isRad, isPro]);
 
   const handleExportPdf = () => {
-    if (!isPro && history.length > 5) {
-      onRequestUpgrade?.("Unlimited History Export");
+    if (!isPro) {
+      onRequestUpgrade?.("History Saving & PDF Export");
+      return;
     }
     const records = history.map((h) => ({
       expr: h.expr,
@@ -173,12 +173,27 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
         </div>
         <div className="flex items-center gap-1">
           <Sheet>
+            {!isPro ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs rounded-xl"
+                aria-label="History (Premium)"
+                onClick={() => onRequestUpgrade?.("History Saving")}
+              >
+                <HistoryIcon className="h-3.5 w-3.5" />
+                <span>History</span>
+                <Lock className="h-3 w-3 text-primary" />
+              </Button>
+            ) : (
             <SheetTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs rounded-xl" aria-label="History">
                 <HistoryIcon className="h-3.5 w-3.5" />
                 <span>History</span>
+                <PremiumLock label="PRO" className="ml-0.5" />
               </Button>
             </SheetTrigger>
+            )}
             <SheetContent className="w-full sm:max-w-md">
               <SheetHeader>
                 <SheetTitle className="flex items-center justify-between text-base">

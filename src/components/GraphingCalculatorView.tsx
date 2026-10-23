@@ -12,7 +12,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { canUseFreeTrial, consumeFreeTrial } from "@/lib/freemium";
+import { useTrial } from "@/lib/freemium";
+import { PremiumLock } from "@/components/PremiumLock";
 import { Lock, Sparkles, AlertCircle } from "lucide-react";
 
 interface GraphingCalculatorViewProps {
@@ -29,20 +30,17 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Freemium limit: 1 free trial for free tier
-  const isLocked = !isPro && !canUseFreeTrial("graph");
+  const graphTrial = useTrial("graph", isPro);
+  const isLocked = graphTrial.locked;
 
-  const handlePlot = () => {
-    if (isLocked) {
+  const handlePlot = (fn = expr) => {
+    if (isLocked || !graphTrial.use()) {
       onRequestUpgrade("Graphing Calculator");
       return;
     }
-
-    if (!isPro) {
-      consumeFreeTrial("graph");
-    }
-
     setErrorMsg(null);
-    setActiveFn(expr);
+    setExpr(fn);
+    setActiveFn(fn);
   };
 
   const data = useMemo(() => {
@@ -80,9 +78,7 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
             Function f(x)
           </label>
           {isLocked && (
-            <span className="text-[10px] text-amber-500 font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 flex items-center gap-1">
-              <Lock className="w-2.5 h-2.5" /> Trial used
-            </span>
+<PremiumLock label="Trial used" />
           )}
         </div>
         <div className="text-[11px] text-muted-foreground">
@@ -101,16 +97,13 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
             onChange={(e) => setExpr(e.target.value)}
             disabled={isLocked}
             placeholder="e.g. x^2 - 4"
+            onKeyDown={(e) => e.key === "Enter" && handlePlot()}
             className="pl-14 h-11 rounded-xl text-sm font-mono"
           />
         </div>
         <Button
-          onClick={handlePlot}
-          className={`h-11 px-5 rounded-xl font-bold gap-1.5 ${
-            isLocked
-              ? "bg-amber-500 hover:bg-amber-600 text-white"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
-          }`}
+          onClick={() => handlePlot()}
+          className="h-11 px-5 rounded-xl font-bold gap-1.5"
         >
           {isLocked ? (
             <>
@@ -130,13 +123,7 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
             key={p}
             type="button"
             disabled={isLocked}
-            onClick={() => {
-              setExpr(p);
-              if (!isLocked) {
-                if (!isPro) consumeFreeTrial("graph");
-                setActiveFn(p);
-              }
-            }}
+            onClick={() => setExpr(p)}
             className="px-2.5 py-1 rounded-lg text-xs font-mono bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition border border-border/50 disabled:opacity-50"
           >
             {p}
@@ -150,20 +137,21 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
-              <XAxis dataKey="x" stroke="#888888" fontSize={10} tickLine={false} />
-              <YAxis stroke="#888888" fontSize={10} tickLine={false} domain={["auto", "auto"]} />
+              <XAxis dataKey="x" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} />
+              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} domain={["auto", "auto"]} />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "rgba(20, 20, 25, 0.9)",
+                  backgroundColor: "hsl(var(--popover))",
+                  color: "hsl(var(--popover-foreground))",
                   borderRadius: "12px",
-                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  border: "1px solid hsl(var(--border))",
                   fontSize: "12px",
                 }}
               />
               <Line
                 type="monotone"
                 dataKey="y"
-                stroke="#7c3aed"
+                stroke="hsl(var(--primary))"
                 strokeWidth={2.5}
                 dot={false}
                 name="y = f(x)"
@@ -179,17 +167,17 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
       </div>
 
       {isLocked && (
-        <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 text-amber-500">
-            <Lock className="w-4 h-4 shrink-0" />
+        <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <PremiumLock />
             <span>You have used your 1 free graph plot.</span>
           </div>
           <Button
             size="sm"
             onClick={() => onRequestUpgrade("2D Graphing")}
-            className="h-7 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold"
+            className="h-7 text-xs rounded-lg font-bold"
           >
-            Unlock Unlimited
+            Get Unlimited Access
           </Button>
         </div>
       )}
