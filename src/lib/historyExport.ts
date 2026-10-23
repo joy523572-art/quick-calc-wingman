@@ -1,16 +1,28 @@
 import type { HistoryRecord } from "./historyStore";
 
 const ascii = (text: string) => text
-  .replaceAll("×", "x").replaceAll("÷", "/").replaceAll("−", "-")
-  .replaceAll("π", "pi").replaceAll("²", "^2").replaceAll("³", "^3")
+  .split("×").join("x").split("÷").join("/").split("−").join("-")
+  .split("π").join("pi").split("Δ").join("D").split("√").join("sqrt").split("±").join("+/-").split("²").join("^2").split("³").join("^3")
   .replace(/[^\x20-\x7E]/g, "?");
-const pdfEscape = (text: string) => ascii(text).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+const pdfEscape = (text: string) => ascii(text).split("\\").join("\\\\").split("(").join("\\(").split(")").join("\\)");
 
 export function makeHistoryPdf(records: HistoryRecord[]) {
-  const lines = records.flatMap((item) => [
+  return makeTextPdf("Scientific Calculator Pro - History", records.flatMap((item) => [
     `${new Date(item.createdAt).toLocaleString()}  ${item.expr} = ${item.result}`,
     "",
-  ]);
+  ]));
+}
+
+const wrap = (line: string, width = 95) => {
+  const out: string[] = [];
+  let rest = line;
+  while (rest.length > width) { out.push(rest.slice(0, width)); rest = rest.slice(width); }
+  out.push(rest);
+  return out;
+};
+
+export function makeTextPdf(title: string, inputLines: string[]) {
+  const lines = inputLines.flatMap((l) => wrap(l));
   const pages: string[][] = [];
   while (lines.length) pages.push(lines.splice(0, 46));
   if (pages.length === 0) pages.push(["No calculations saved."]);
@@ -22,7 +34,7 @@ export function makeHistoryPdf(records: HistoryRecord[]) {
     const streamId = pageId + 1;
     pageRefs.push(pageId);
     const text = [
-      "BT", "/F1 14 Tf", "50 790 Td", `(Scientific Calculator Pro - History) Tj`,
+      "BT", "/F1 14 Tf", "50 790 Td", `(${pdfEscape(title)}) Tj`,
       "/F1 9 Tf", "0 -22 Td", `(Exported ${pdfEscape(new Date().toLocaleString())}) Tj`, "0 -20 Td",
       ...pageLines.flatMap((line, lineIndex) => lineIndex === 0 ? [`(${pdfEscape(line)}) Tj`] : ["0 -14 Td", `(${pdfEscape(line)}) Tj`]),
       "ET",
@@ -47,10 +59,18 @@ export function makeHistoryPdf(records: HistoryRecord[]) {
 }
 
 export function downloadHistoryPdf(records: HistoryRecord[]) {
-  const url = URL.createObjectURL(makeHistoryPdf(records));
+  downloadBlob(makeHistoryPdf(records), "scientific-calculator-history.pdf");
+}
+
+export function downloadTextPdf(title: string, lines: string[], filename: string) {
+  downloadBlob(makeTextPdf(title, lines), filename);
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "scientific-calculator-history.pdf";
+  link.download = filename;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

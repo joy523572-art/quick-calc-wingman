@@ -7,6 +7,8 @@ import { ConverterView } from "@/components/ConverterView";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { usePlayBilling } from "@/hooks/usePlayBilling";
 import { requestInAppReview } from "@/lib/inAppReview";
+import { useNetworkMode } from "@/lib/networkMode";
+import { snapshotTrials, restoreTrials } from "@/lib/freemium";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,6 +30,8 @@ import {
   ShieldCheck,
   Star,
   Info,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 type TabKey = "calc" | "graph" | "equations" | "converter";
@@ -49,6 +53,7 @@ const Index = () => {
   const [dark, setDark] = useState(false);
 
   const { isPro, purchasePlan, checkSubscription } = usePlayBilling();
+  const network = useNetworkMode();
 
   // Dark/Light theme setup
   useEffect(() => {
@@ -106,6 +111,18 @@ const Index = () => {
                 <span>Upgrade</span>
               </Button>
             )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 rounded-xl text-[11px] gap-1"
+              onClick={() => network.setPreference(network.preference === "online" ? "offline" : "online")}
+              aria-label={network.online ? "Online mode on. Switch to offline" : "Offline mode on. Switch to online"}
+              title={!network.deviceOnline ? "No connection — working offline" : undefined}
+            >
+              {network.online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+              {network.online ? "Online" : "Offline"}
+            </Button>
 
             <Button
               variant="ghost"
@@ -288,14 +305,17 @@ const DataSafety = () => (
     </ul>
     <h3 className="font-semibold text-sm mt-3">Reset & Clear Local Data</h3>
     <p className="text-muted-foreground">
-      Tap below to permanently purge all saved calculation history and cached preferences.
+      Tap below to permanently purge saved calculation history and cached preferences. Used free trials stay used.
     </p>
     <Button
       variant="destructive"
       size="sm"
       className="mt-2 text-xs rounded-xl"
       onClick={() => {
+        // Used free trials are kept so they can't be reclaimed by clearing data.
+        const trials = snapshotTrials();
         localStorage.clear();
+        restoreTrials(trials);
         sessionStorage.clear();
         window.location.reload();
       }}

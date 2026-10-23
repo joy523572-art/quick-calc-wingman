@@ -13,4 +13,11 @@ describe("unit conversions", () => {
   it("applies a supplied live currency exchange rate", () => {
     expect(convertMeasurement(10, "currency", "USD", "EUR", 0.9)).toBe(9);
   });
+
+  it("covers worldwide currencies offline", async () => {
+    const { CURRENCY_CODES, crossRate, readCachedRates } = await import("@/lib/currencies");
+    expect(CURRENCY_CODES.length).toBeGreaterThan(150);
+    expect(CURRENCY_CODES).toContain("NGN");
+    expect(crossRate(readCachedRates(), "USD", "USD")).toBe(1);
+  });
 });
