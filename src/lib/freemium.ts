@@ -1,8 +1,11 @@
 export const FREE_LIMITS = {
   dailyHistorySaves: 3,
   graphs: 1,
+  graph: 1,
   equations: 1,
+  equation: 1,
   conversions: 1,
+  conversion: 1,
 } as const;
 
 export type TrialFeature = "graph" | "equation" | "conversion";

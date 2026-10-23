@@ -6,13 +6,23 @@ export type EquationSolution = { summary: string; steps: string[]; roots: number
 const tidy = (value: number) => (Math.abs(value) < 1e-10 ? 0 : value);
 const format = (value: number) => String(Number(tidy(value).toPrecision(10)));
 
+type MathNodeLike = {
+  isConstantNode?: boolean;
+  value?: unknown;
+  isSymbolNode?: boolean;
+  name?: string;
+  isOperatorNode?: boolean;
+  op?: string;
+  args?: MathNodeLike[];
+};
+
 function polynomialFromExpression(expression: string): Polynomial {
-  const node = parse(expression) as any;
-  const visit = (part: any): Polynomial => {
+  const node = parse(expression) as unknown as MathNodeLike;
+  const visit = (part: MathNodeLike): Polynomial => {
     if (part.isConstantNode && typeof part.value === "number") return [part.value, 0, 0];
     if (part.isSymbolNode && part.name === "x") return [0, 1, 0];
     if (part.isOperatorNode) {
-      const args = part.args as any[];
+      const args = part.args ?? [];
       if (part.op === "+" || part.op === "-") {
         if (args.length === 1) return part.op === "-" ? visit(args[0]).map((n) => -n) as Polynomial : visit(args[0]);
         const left = visit(args[0]);
