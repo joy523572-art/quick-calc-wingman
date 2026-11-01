@@ -1,47 +1,113 @@
-// Offline support: keeps the app shell and its files on the device.
-const CACHE = "nume-offline-v1";
-const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/favicon.png", "/icons/icon-192.png"];
+const CACHE_NAME = "nume-shell-v2";
+const APP_SHELL = [
+  "/",
+  "/index.html",
+  "/manifest.webmanifest",
+  "/favicon.png",
+  "/placeholder.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-512.png",
+  "/icons/icon-1024.png",
+];
+
+const OFFLINE_FALLBACK = "/index.html";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.addAll(APP_SHELL);
+      await self.skipWaiting();
+    })(),
+  );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+      await self.clients.claim();
+    })(),
   );
 });
 
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
+function isNavigationRequest(request) {
+  return request.mode === "navigate" || request.destination === "document";
+}
 
-  if (req.mode === "navigate") {
+function isSameOriginUrl(url) {
+  return url.origin === self.location.origin;
+}
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+
+  if (request.method !== "GET") return;
+
+  const url = new URL(request.url);
+  if (!isSameOriginUrl(url)) return;
+
+  // Always serve the app shell from cache while offline; refresh it when online.
+  if (isNavigationRequest(request)) {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put("/index.html", copy));
-          return res;
-        })
-        .catch(() => caches.match("/index.html")),
+      (async () => {
+        try {
+          const response = await fetch(request);
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(OFFLINE_FALLBACK, response.clone());
+          return response;
+        } catch {
+          const cached = await caches.match(OFFLINE_FALLBACK);
+          return cached || (await caches.match("/"));
+        }
+      })(),
     );
     return;
   }
 
-  event.respondWith(
-    caches.match(req).then(
-      (hit) =>
-        hit ||
-        fetch(req).then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+  // Cache app resources aggressively, but never cache cross-origin or non-GET requests.
+  const isAppAsset =
+    APP_SHELL.some((path) => url.pathname === path) ||
+    url.pathname.includes("/assets/") ||
+    url.pathname.startsWith("/src/") ||
+    ["style", "script", "worker", "image", "font", "manifest"].includes(request.destination);
+
+  if (isAppAsset) {
+    event.respondWith(
+      (async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+
+        try {
+          const response = await fetch(request);
+          if (response && response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, response.clone());
           }
-          return res;
-        }),
-    ),
+          return response;
+        } catch {
+          return (await caches.match(OFFLINE_FALLBACK)) || (await caches.match("/"));
+        }
+      })(),
+    );
+    return;
+  }
+
+  // Default network-first fallback for any other same-origin request.
+  event.respondWith(
+    (async () => {
+      try {
+        const response = await fetch(request);
+        if (response && response.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, response.clone());
+        }
+        return response;
+      } catch {
+        return (await caches.match(request)) || (await caches.match(OFFLINE_FALLBACK));
+      }
+    })(),
   );
 });
