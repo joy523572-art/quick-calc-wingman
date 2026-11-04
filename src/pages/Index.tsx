@@ -177,7 +177,7 @@ const Index = () => {
       </main>
 
       {/* Bottom Legal & Safety Footer Floating Pill */}
-      <footer className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 rounded-full bg-background/90 backdrop-blur-md border border-border/80 shadow-lg px-3 py-1 flex items-center gap-1.5 text-xs">
+      <footer className={`${activeTab === "equations" ? "self-center mb-3" : "fixed bottom-3 left-1/2 -translate-x-1/2"} z-20 rounded-full bg-background/90 backdrop-blur-md border border-border/80 shadow-lg px-3 py-1 flex items-center gap-1.5 text-xs`}>
         <PolicyDialog
           title="Privacy Policy"
           trigger="Privacy"
