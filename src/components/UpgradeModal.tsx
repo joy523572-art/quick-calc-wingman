@@ -177,7 +177,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             ) : (
               <>
                 <Lock className="w-4 h-4" />
-                Subscribe via Google Play
+                Get Unlimited Access
               </>
             )}
           </Button>

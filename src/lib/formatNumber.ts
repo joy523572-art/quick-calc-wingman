@@ -12,10 +12,8 @@ export const formatWithCommas = (val: string | number): string => {
     str === "-Infinity" ||
     str === "Unable to solve" ||
     str === "🔒" ||
-    str === "Trial used" ||
     str.includes("=") ||
     str.includes("x =") ||
-    str.includes("Trial") ||
     str.includes("Premium")
   ) {
     return str;
