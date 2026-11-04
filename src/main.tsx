@@ -4,29 +4,11 @@ import "./index.css";
 
 createRoot(document.getElementById("root")!).render(<App />);
 
-// Offline support for the installed app. Skip registration in dev and preview environments.
-const inIframe = (() => {
-  try {
-    return window.self !== window.top;
-  } catch {
-    return true;
-  }
-})();
-
-const isPreviewHost =
-  location.hostname.includes("id-preview--") ||
-  location.hostname.includes("lovableproject.com");
-
+// Service workers have been removed from this app.
+// Unregister any previously registered workers so every device
+// loads fresh assets directly from the network.
 if ("serviceWorker" in navigator) {
-  if (import.meta.env.PROD && !inIframe && !isPreviewHost) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker
-        .register("/pwabuilder-sw.js")
-        .catch(() => navigator.serviceWorker.register("/sw.js"));
-    });
-  } else {
-    void navigator.serviceWorker.getRegistrations().then((registrations) =>
-      registrations.forEach((registration) => void registration.unregister()),
-    );
-  }
+  void navigator.serviceWorker.getRegistrations().then((registrations) =>
+    registrations.forEach((registration) => void registration.unregister()),
+  );
 }
