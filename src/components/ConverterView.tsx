@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UNIT_OPTIONS, CURRENCY_OPTIONS, UnitCategory, convertMeasurement } from "@/lib/unitConversion";
 import { crossRate, fetchLiveRates, readCachedRates, RateTable } from "@/lib/currencies";
-import { useTrial } from "@/lib/freemium";
+import { canAccessPremiumFeature } from "@/lib/freemium";
 import { useNetworkMode } from "@/lib/networkMode";
 import { formatWithCommas } from "@/lib/formatNumber";
 import { PremiumLock } from "@/components/PremiumLock";
@@ -43,22 +43,17 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
   const [rates, setRates] = useState<RateTable>(readCachedRates);
   const { online } = useNetworkMode();
 
-  const currencyTrial = useTrial("currency", isPro);
-  const weightTrial = useTrial("weight", isPro);
-  const tempTrial = useTrial("temperature", isPro);
-  const lengthTrial = useTrial("length", isPro);
-  const trials = { currency: currencyTrial, weight: weightTrial, temperature: tempTrial, length: lengthTrial };
-  const trial = trials[category];
+  const locked = !canAccessPremiumFeature(category, isPro);
 
   useEffect(() => {
-    if (!online) {
+    if (!isPro || !online) {
       setRates(readCachedRates());
       return;
     }
     const ctrl = new AbortController();
     fetchLiveRates(ctrl.signal).then(setRates).catch(() => setRates(readCachedRates()));
     return () => ctrl.abort();
-  }, [online]);
+  }, [online, isPro]);
 
   const options = useMemo(() => optionsFor(category), [category]);
 
@@ -70,16 +65,15 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
     setErrorMsg(null);
   };
 
-  const label = CATEGORIES.find((c) => c.key === category)!.label;
+  const label = CATEGORIES.find((c) => c.key === category)?.label ?? "Unit";
 
   const handleConvert = () => {
-    if (trial.locked) return onRequestUpgrade(`${label} Converter`);
+    if (locked) return onRequestUpgrade(`${label} Converter`);
     const num = parseFloat(amount.replace(/,/g, ""));
     if (isNaN(num)) return setErrorMsg("Please enter a valid number.");
     try {
       const rate = category === "currency" ? crossRate(rates, fromUnit, toUnit) : undefined;
       const res = convertMeasurement(num, category, fromUnit, toUnit, rate);
-      if (!trial.use()) return onRequestUpgrade(`${label} Converter`);
       setErrorMsg(null);
       setResult(formatWithCommas(Number(res.toPrecision(10))));
     } catch (err) {
@@ -98,7 +92,8 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
     <Card className="rounded-3xl border border-border bg-card shadow-lg p-4 space-y-4">
       <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/60">
         {CATEGORIES.map((c) => (
-          <button
+          <Button
+            variant="ghost"
             key={c.key}
             type="button"
             onClick={() => pickCategory(c.key)}
@@ -107,13 +102,13 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
             }`}
           >
             {c.label}
-            {!isPro && trials[c.key].locked && <Lock className="w-3 h-3 text-primary" />}
-          </button>
+            {!isPro && <Lock className="w-3 h-3 text-primary" />}
+          </Button>
         ))}
       </div>
 
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{isPro ? "Unlimited Pro" : trial.locked ? <PremiumLock label="Trial used" /> : `1 free ${label.toLowerCase()} conversion`}</span>
+        <span>{isPro ? "Unlimited Pro" : <PremiumLock />}</span>
         {category === "currency" && (
           <span className="flex items-center gap-1">
             {online ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />} {rateNote}
@@ -125,16 +120,17 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         value={amount}
         inputMode="decimal"
         onChange={(e) => setAmount(e.target.value)}
-        disabled={trial.locked}
+        disabled={locked}
         className="h-11 rounded-xl font-mono"
         aria-label="Amount"
       />
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} disabled={trial.locked} />
+        <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} disabled={locked} />
         <Button
           variant="ghost"
           size="icon"
+          disabled={locked}
           aria-label="Swap units"
           onClick={() => {
             setFromUnit(toUnit);
@@ -143,11 +139,11 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         >
           <ArrowRightLeft className="w-4 h-4" />
         </Button>
-        <UnitSelect value={toUnit} onChange={setToUnit} options={options} disabled={trial.locked} />
+        <UnitSelect value={toUnit} onChange={setToUnit} options={options} disabled={locked} />
       </div>
 
       <Button onClick={handleConvert} className="w-full h-11 rounded-xl font-bold gap-2">
-        {trial.locked ? (<><Lock className="w-4 h-4" /> Premium</>) : "Convert"}
+        {locked ? (<><Lock className="w-4 h-4" /> Premium</>) : "Convert"}
       </Button>
 
       {errorMsg && (
@@ -156,16 +152,16 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         </div>
       )}
 
-      {result && (
+      {isPro && result && (
         <div className="p-4 rounded-2xl bg-muted/50 border border-border">
           <div className="text-xs text-muted-foreground">{amount} {fromUnit} =</div>
           <div className="text-2xl font-extrabold font-mono text-primary break-all">{result} {toUnit}</div>
         </div>
       )}
 
-      {trial.locked && (
+      {locked && (
         <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-xs flex items-center justify-between gap-2">
-          <span className="flex items-center gap-2"><PremiumLock /> Free {label.toLowerCase()} trial used.</span>
+          <span className="flex items-center gap-2"><PremiumLock /> {label} conversion requires Premium.</span>
           <Button size="sm" onClick={() => onRequestUpgrade(`${label} Converter`)} className="h-7 text-xs rounded-lg font-bold">
             Get Unlimited Access
           </Button>
