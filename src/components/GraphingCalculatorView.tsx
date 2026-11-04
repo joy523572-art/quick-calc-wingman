@@ -12,9 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { useTrial } from "@/lib/freemium";
+import { canAccessPremiumFeature } from "@/lib/freemium";
 import { PremiumLock } from "@/components/PremiumLock";
-import { Lock, Sparkles, AlertCircle } from "lucide-react";
+import { Lock, AlertCircle } from "lucide-react";
 
 interface GraphingCalculatorViewProps {
   isPro: boolean;
@@ -29,12 +29,10 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
   const [activeFn, setActiveFn] = useState<string>("x^2 - 4");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Freemium limit: 1 free trial for free tier
-  const graphTrial = useTrial("graph", isPro);
-  const isLocked = graphTrial.locked;
+  const isLocked = !canAccessPremiumFeature("graph", isPro);
 
   const handlePlot = (fn = expr) => {
-    if (isLocked || !graphTrial.use()) {
+    if (isLocked) {
       onRequestUpgrade("Graphing Calculator");
       return;
     }
@@ -45,6 +43,7 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
 
   const data = useMemo(() => {
     const points: Array<{ x: number; y: number }> = [];
+    if (isLocked) return points;
     const normalized = activeFn
       .replace(/×/g, "*")
       .replace(/÷/g, "/")
@@ -66,7 +65,7 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
       }
     }
     return points;
-  }, [activeFn]);
+  }, [activeFn, isLocked]);
 
   const presets = ["x^2 - 4", "sin(x)", "cos(x)", "x^3 - 3*x", "2*x + 1"];
 
@@ -78,11 +77,11 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
             Function f(x)
           </label>
           {isLocked && (
-<PremiumLock label="Trial used" />
+<PremiumLock />
           )}
         </div>
         <div className="text-[11px] text-muted-foreground">
-          {isPro ? "Unlimited Pro Mode" : "1 Free Graph Plot"}
+          {isPro ? "Unlimited Pro Mode" : "Premium required"}
         </div>
       </div>
 
@@ -93,6 +92,7 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
             f(x) =
           </span>
           <Input
+            aria-label="Function"
             value={expr}
             onChange={(e) => setExpr(e.target.value)}
             disabled={isLocked}
@@ -133,7 +133,9 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
 
       {/* Plot Canvas */}
       <div className="w-full h-64 bg-muted/30 rounded-2xl border border-border p-2 pt-4">
-        {data.length > 0 ? (
+        {isLocked ? (
+          <div className="w-full h-full flex items-center justify-center"><PremiumLock label="Premium graphing" /></div>
+        ) : data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
@@ -170,7 +172,7 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
         <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2">
             <PremiumLock />
-            <span>You have used your 1 free graph plot.</span>
+            <span>Graphing requires Premium.</span>
           </div>
           <Button
             size="sm"

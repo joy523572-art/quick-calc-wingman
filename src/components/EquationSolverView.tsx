@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { solveEquation, EquationSolution } from "@/lib/equationSolver";
-import { useTrial } from "@/lib/freemium";
+import { canAccessPremiumFeature } from "@/lib/freemium";
 import { downloadTextPdf } from "@/lib/historyExport";
 import { useNetworkMode } from "@/lib/networkMode";
 import { PremiumLock } from "@/components/PremiumLock";
@@ -33,20 +33,16 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   const fileRef = useRef<HTMLInputElement>(null);
   const { online } = useNetworkMode();
 
-  const solveTrial = useTrial("equation", isPro);
-  const cameraTrial = useTrial("equation_camera", isPro);
-  const pdfTrial = useTrial("equation_pdf", isPro);
+  const locked = !canAccessPremiumFeature("equation", isPro);
 
   const handleSolve = () => {
-    if (solveTrial.locked) return onRequestUpgrade("Equation Solver");
+    if (locked) return onRequestUpgrade("Equation Solver");
     if (!inputEq.trim()) {
       setErrorMsg("Please enter an equation, e.g. 2x + 5 = 15 or x² - 5x + 6 = 0");
       return;
     }
     try {
       const res = solveEquation(inputEq);
-      // Only a successful solve uses the free trial.
-      if (!solveTrial.use()) return onRequestUpgrade("Equation Solver");
       setErrorMsg(null);
       setSolution(res);
       setSolvedEq(inputEq);
@@ -57,7 +53,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   };
 
   const openCamera = () => {
-    if (cameraTrial.locked) return onRequestUpgrade("Camera Equation Scan");
+    if (!canAccessPremiumFeature("equation_camera", isPro)) return onRequestUpgrade("Camera Equation Scan");
     if (!online) {
       setErrorMsg("Camera scan needs Online mode the first time it reads text. Switch to Online and try again.");
       return;
@@ -68,6 +64,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   const onPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
+    if (!canAccessPremiumFeature("equation_camera", isPro)) return onRequestUpgrade("Camera Equation Scan");
     if (!file) return;
     setScanning(true);
     setErrorMsg(null);
@@ -76,7 +73,6 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
       const { data } = await recognize(file, "eng");
       const eq = cleanOcr(data.text || "");
       if (!eq || !eq.includes("=")) throw new Error("No equation found in the photo. Try a clearer, closer shot.");
-      if (!cameraTrial.use()) return onRequestUpgrade("Camera Equation Scan");
       setInputEq(eq.slice(0, 4000));
     } catch (err) {
       setErrorMsg((err as Error)?.message || "Could not read the photo. Please try again.");
@@ -86,9 +82,8 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   };
 
   const downloadPdf = () => {
+    if (!canAccessPremiumFeature("equation_pdf", isPro)) return onRequestUpgrade("Download Answers as PDF");
     if (!solution) return;
-    if (pdfTrial.locked) return onRequestUpgrade("Download Answers as PDF");
-    if (!pdfTrial.use()) return onRequestUpgrade("Download Answers as PDF");
     downloadTextPdf(
       "Nume - Equation Solution",
       [`Equation: ${solvedEq}`, `Answer: ${solution.summary}`, "", "Step-by-step:", ...solution.steps.map((s, i) => `${i + 1}. ${s}`)],
@@ -96,8 +91,6 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
     );
   };
 
-  const samples = ["2x + 5 = 15", "x² - 5x + 6 = 0", "3x - 9 = 0", "2x² + 4x - 6 = 0"];
-  const locked = solveTrial.locked;
 
   return (
     <Card className="rounded-3xl border border-border bg-card shadow-lg p-4 space-y-4">
@@ -105,15 +98,14 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         <label className="text-xs font-semibold text-muted-foreground">Enter equation</label>
         {isPro ? (
           <span className="text-[11px] text-muted-foreground">Unlimited Pro</span>
-        ) : locked ? (
-          <PremiumLock label="Trial used" />
         ) : (
-          <span className="text-[11px] text-muted-foreground">1 free solve</span>
+          <PremiumLock />
         )}
       </div>
 
       <div className="space-y-1.5">
         <Textarea
+          aria-label="Equation"
           value={inputEq}
           maxLength={4000}
           disabled={locked}
@@ -122,25 +114,10 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
             if (errorMsg) setErrorMsg(null);
           }}
           placeholder="e.g. 2x + 5 = 15 or x² - 5x + 6 = 0"
-          className="min-h-[90px] w-full p-3 rounded-2xl text-sm font-mono resize-y bg-muted/30 disabled:opacity-50"
+          className="min-h-[140px] w-full p-3 rounded-2xl text-sm font-mono resize-y bg-muted/30 disabled:opacity-50"
         />
         <div className="flex justify-end text-[11px] text-muted-foreground px-1">{inputEq.length} / 4000</div>
       </div>
-
-      {!locked && (
-        <div className="flex flex-wrap gap-1.5">
-          {samples.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setInputEq(s)}
-              className="px-2.5 py-1 rounded-lg text-xs font-mono bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/50"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
 
       <div className="grid grid-cols-[1fr_auto] gap-2">
         <Button onClick={handleSolve} className="h-11 rounded-xl font-bold gap-2">
@@ -149,7 +126,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         <Button variant="outline" onClick={openCamera} disabled={scanning} className="h-11 rounded-xl gap-1.5" aria-label="Scan equation with camera">
           {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
           <span className="text-xs">Scan</span>
-          {!isPro && cameraTrial.locked && <Lock className="w-3 h-3 text-primary" />}
+          {!isPro && <Lock className="w-3 h-3 text-primary" />}
         </Button>
         <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
       </div>
@@ -162,7 +139,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         </div>
       )}
 
-      {solution && (
+      {isPro && solution && (
         <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-primary flex items-center gap-1">
@@ -170,7 +147,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
             </span>
             <Button size="sm" variant="outline" onClick={downloadPdf} className="h-7 text-xs gap-1 rounded-lg">
               <FileDown className="w-3.5 h-3.5" /> PDF
-              {!isPro && pdfTrial.locked && <Lock className="w-3 h-3 text-primary" />}
+              {!isPro && <Lock className="w-3 h-3 text-primary" />}
             </Button>
           </div>
           <div className="text-xl font-extrabold font-mono">{solution.summary}</div>
@@ -190,7 +167,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
 
       {locked && (
         <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-xs flex items-center justify-between gap-2">
-          <span className="flex items-center gap-2"><PremiumLock /> You used your 1 free solve.</span>
+          <span className="flex items-center gap-2"><PremiumLock /> Equation Solver requires Premium.</span>
           <Button size="sm" onClick={() => onRequestUpgrade("Equation Solver")} className="h-7 text-xs rounded-lg font-bold">
             Get Unlimited Access
           </Button>

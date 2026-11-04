@@ -8,7 +8,6 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { usePlayBilling } from "@/hooks/usePlayBilling";
 import { requestInAppReview } from "@/lib/inAppReview";
 import { useNetworkMode } from "@/lib/networkMode";
-import { snapshotTrials, restoreTrials } from "@/lib/freemium";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -162,7 +161,7 @@ const Index = () => {
       </header>
 
       {/* Main Feature View Container */}
-      <main className="flex-1 max-w-md w-full mx-auto p-4 sm:p-5 pb-24">
+      <main className={`flex-1 w-full mx-auto p-4 sm:p-5 pb-24 ${activeTab === "equations" ? "max-w-3xl" : "max-w-md"}`}>
         {activeTab === "calc" && (
           <Calculator isPro={isPro} onRequestUpgrade={handleRequestUpgrade} />
         )}
@@ -178,7 +177,7 @@ const Index = () => {
       </main>
 
       {/* Bottom Legal & Safety Footer Floating Pill */}
-      <footer className="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 rounded-full bg-background/90 backdrop-blur-md border border-border/80 shadow-lg px-3 py-1 flex items-center gap-1.5 text-xs">
+      <footer className={`${activeTab === "equations" ? "self-center mb-3" : "fixed bottom-3 left-1/2 -translate-x-1/2"} z-20 rounded-full bg-background/90 backdrop-blur-md border border-border/80 shadow-lg px-3 py-1 flex items-center gap-1.5 text-xs`}>
         <PolicyDialog
           title="Privacy Policy"
           trigger="Privacy"
@@ -305,17 +304,14 @@ const DataSafety = () => (
     </ul>
     <h3 className="font-semibold text-sm mt-3">Reset & Clear Local Data</h3>
     <p className="text-muted-foreground">
-      Tap below to permanently purge saved calculation history and cached preferences. Used free trials stay used.
+      Tap below to permanently purge saved calculation history and cached preferences.
     </p>
     <Button
       variant="destructive"
       size="sm"
       className="mt-2 text-xs rounded-xl"
       onClick={() => {
-        // Used free trials are kept so they can't be reclaimed by clearing data.
-        const trials = snapshotTrials();
         localStorage.clear();
-        restoreTrials(trials);
         sessionStorage.clear();
         window.location.reload();
       }}
