@@ -15,8 +15,8 @@
   "categories": ["utilities", "education", "productivity"],
   "prefer_related_applications": false,
   "iarc_rating_id": "",
-  "version": "1.0.1",
-  "version_code": 6,
+  "version": "1.0.9",
+  "version_code": 9,
   "package_name": "scientific.calculator.cm",
   "related_applications": [
     {

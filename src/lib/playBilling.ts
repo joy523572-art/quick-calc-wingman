@@ -1,7 +1,7 @@
 export const PLAY_BILLING_URL = "https://play.google.com/billing";
 export const SUBSCRIPTIONS = [
-  { id: "premium_monthly", price: "$6/month", cadence: "Monthly" },
-  { id: "premium_weekly", price: "$3 weekly", cadence: "Weekly" },
+  { id: "monthly", basePlanId: "monthly", price: "$6/month", cadence: "Monthly" },
+  { id: "weekly", basePlanId: "weekly", price: "$3 weekly", cadence: "Weekly" },
 ] as const;
 
 type PlayItemDetails = {
@@ -42,15 +42,38 @@ export async function getSubscriptionDetails() {
 export async function hasActivePlaySubscription(service?: DigitalGoodsService) {
   const billing = service ?? await getPlayBillingService();
   const purchases = await billing.listPurchases();
-  return purchases.some((purchase) => SUBSCRIPTIONS.some((plan) => purchase.itemId === plan.id) && Boolean(purchase.purchaseToken));
+  return purchases.some((purchase) => {
+    if (!purchase.purchaseToken) return false;
+    const item = purchase.itemId?.toLowerCase() || "";
+    // Matches if itemId is equal to plan id, basePlanId, ends with :basePlanId or contains basePlanId
+    return SUBSCRIPTIONS.some((plan) => {
+      const planId = plan.id.toLowerCase();
+      const basePlan = plan.basePlanId.toLowerCase();
+      return (
+        item === planId ||
+        item === basePlan ||
+        item.endsWith(`:${basePlan}`) ||
+        item.includes(basePlan) ||
+        item.includes(planId)
+      );
+    });
+  });
 }
 
 export async function buySubscription(productId: string) {
-  const product = SUBSCRIPTIONS.find((plan) => plan.id === productId);
+  const product = SUBSCRIPTIONS.find(
+    (plan) => plan.id === productId || plan.basePlanId === productId
+  );
   if (!product) throw new Error("That subscription option is not available.");
-  await getSubscriptionDetails();
+  
+  // Google Play Billing Digital Goods API: sku is basePlanId (weekly or monthly)
+  const skuToPurchase = product.basePlanId;
+
+  // Fire getSubscriptionDetails non-blockingly so the UI prompt shows immediately without delay
+  getSubscriptionDetails().catch(() => {});
+
   const request = new PaymentRequest(
-    [{ supportedMethods: PLAY_BILLING_URL, data: { sku: product.id } }],
+    [{ supportedMethods: PLAY_BILLING_URL, data: { sku: skuToPurchase } }],
     { total: { label: "Get Unlimited Access", amount: { currency: "USD", value: "0.00" } } },
   );
   const response = await request.show();

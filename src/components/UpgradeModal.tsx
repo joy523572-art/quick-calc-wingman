@@ -17,6 +17,7 @@ interface UpgradeModalProps {
   isPro: boolean;
   onPurchase: (planId: string) => Promise<boolean>;
   onRestore: () => Promise<boolean>;
+  onSubscriptionResult?: (success: boolean, planId: string, error?: string) => void;
 }
 
 export const UpgradeModal: React.FC<UpgradeModalProps> = ({
@@ -26,8 +27,9 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   isPro,
   onPurchase,
   onRestore,
+  onSubscriptionResult,
 }) => {
-  const [selectedPlan, setSelectedPlan] = useState<string>("premium_monthly");
+  const [selectedPlan, setSelectedPlan] = useState<string>("monthly");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -40,12 +42,21 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       const ok = await onPurchase(selectedPlan);
       if (ok) {
         setSuccessMsg("Subscription activated successfully!");
-        setTimeout(() => onOpenChange(false), 1200);
+        onSubscriptionResult?.(true, selectedPlan);
+        setTimeout(() => onOpenChange(false), 900);
       } else {
-        setErrorMsg("Google Play billing is available when this app is installed from the Google Play Store.");
+        const msg = "Google Play billing is available when this app is opened from its Play Store installation.";
+        setErrorMsg(msg);
+        // Do NOT close the modal on failure — keep user inside the upgrade page!
+        onSubscriptionResult?.(false, selectedPlan, msg);
       }
     } catch (err: unknown) {
-      setErrorMsg((err as Error)?.message || "Google Play billing is available when installed from Google Play Store.");
+      const msg =
+        (err as Error)?.message ||
+        "Payment could not be completed. You can try again or tap Restore Purchases.";
+      setErrorMsg(msg);
+      // Keep modal open so the user sees the notice directly inside the upgrade page!
+      onSubscriptionResult?.(false, selectedPlan, msg);
     } finally {
       setLoading(false);
     }
@@ -59,12 +70,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       const active = await onRestore();
       if (active) {
         setSuccessMsg("Purchases restored successfully!");
-        setTimeout(() => onOpenChange(false), 1200);
+        onSubscriptionResult?.(true, "Restored Plan");
+        setTimeout(() => onOpenChange(false), 900);
       } else {
-        setErrorMsg("No active Google Play subscription found for this account.");
+        const msg = "No active Google Play subscription found for this account.";
+        setErrorMsg(msg);
+        onSubscriptionResult?.(false, "Restore", msg);
       }
     } catch {
-      setErrorMsg("Google Play service check completed.");
+      const msg = "Google Play service check completed without active subscription.";
+      setErrorMsg(msg);
+      onSubscriptionResult?.(false, "Restore", msg);
     } finally {
       setLoading(false);
     }
@@ -88,9 +104,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         </DialogHeader>
 
         {errorMsg && (
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-500 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{errorMsg}</span>
+          <div className="p-3.5 rounded-2xl bg-muted/60 dark:bg-muted/40 border border-border/70 text-xs text-muted-foreground flex items-start gap-2.5 animate-in fade-in duration-200">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
+            <div className="space-y-0.5">
+              <span className="font-semibold text-foreground block">Subscription Notice</span>
+              <span className="leading-relaxed block">{errorMsg}</span>
+            </div>
           </div>
         )}
 
@@ -105,7 +124,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         <div className="grid grid-cols-2 gap-3 my-2">
           {SUBSCRIPTIONS.map((plan) => {
             const isSelected = selectedPlan === plan.id;
-            const isBest = plan.id === "premium_monthly";
+            const isBest = plan.id === "monthly" || plan.basePlanId === "monthly";
             return (
               <div
                 key={plan.id}
