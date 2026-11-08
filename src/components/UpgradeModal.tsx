@@ -7,15 +7,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Check, Sparkles, Lock, RefreshCw, AlertCircle } from "lucide-react";
-import { SUBSCRIPTIONS } from "@/lib/playBilling";
+import { Input } from "@/components/ui/input";
+import { Check, Sparkles, Lock, RefreshCw, AlertCircle, Mail, Receipt } from "lucide-react";
+import { SUBSCRIPTIONS, isPlayBillingAvailable, getWebSubscriptionRecord, cancelWebSubscription } from "@/lib/playBilling";
 
 interface UpgradeModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   featureTrigger?: string;
   isPro: boolean;
-  onPurchase: (planId: string) => Promise<boolean>;
+  onPurchase: (productId: string, basePlanId?: string, email?: string) => Promise<boolean>;
   onRestore: () => Promise<boolean>;
   onSubscriptionResult?: (success: boolean, planId: string, error?: string) => void;
 }
@@ -30,33 +31,47 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   onSubscriptionResult,
 }) => {
   const [selectedPlan, setSelectedPlan] = useState<string>("monthly");
+  const [email, setEmail] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [receiptDetails, setReceiptDetails] = useState<{ receiptId: string; email: string } | null>(null);
+
+  const webRecord = getWebSubscriptionRecord();
 
   const handleBuy = async () => {
+    if (!isPlayBillingAvailable() && (!email || !email.includes("@"))) {
+      setErrorMsg("Please enter your email address to receive your subscription receipt.");
+      return;
+    }
+
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    const targetPlan = SUBSCRIPTIONS.find((p) => p.id === selectedPlan) || SUBSCRIPTIONS[0];
     try {
-      const ok = await onPurchase(selectedPlan);
+      const ok = await onPurchase(targetPlan.productId, targetPlan.basePlanId, email);
       if (ok) {
-        setSuccessMsg("Subscription activated successfully!");
-        onSubscriptionResult?.(true, selectedPlan);
-        setTimeout(() => onOpenChange(false), 900);
+        const record = getWebSubscriptionRecord();
+        if (record) {
+          setReceiptDetails({ receiptId: record.receiptId, email: record.email });
+        }
+        setSuccessMsg("Subscription successful! All Pro features unlocked.");
+        onSubscriptionResult?.(true, targetPlan.id);
+        setTimeout(() => {
+          onOpenChange(false);
+        }, 1600);
       } else {
-        const msg = "Google Play billing is available when this app is opened from its Play Store installation.";
+        const msg = "Subscription could not be completed. Please try again.";
         setErrorMsg(msg);
-        // Do NOT close the modal on failure — keep user inside the upgrade page!
-        onSubscriptionResult?.(false, selectedPlan, msg);
+        onSubscriptionResult?.(false, targetPlan.id, msg);
       }
     } catch (err: unknown) {
       const msg =
         (err as Error)?.message ||
-        "Payment could not be completed. You can try again or tap Restore Purchases.";
+        "Subscription could not be completed. Please check your details and try again.";
       setErrorMsg(msg);
-      // Keep modal open so the user sees the notice directly inside the upgrade page!
-      onSubscriptionResult?.(false, selectedPlan, msg);
+      onSubscriptionResult?.(false, targetPlan.id, msg);
     } finally {
       setLoading(false);
     }
@@ -69,21 +84,32 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     try {
       const active = await onRestore();
       if (active) {
-        setSuccessMsg("Purchases restored successfully!");
+        const record = getWebSubscriptionRecord();
+        if (record) {
+          setReceiptDetails({ receiptId: record.receiptId, email: record.email });
+        }
+        setSuccessMsg("Subscription restored successfully!");
         onSubscriptionResult?.(true, "Restored Plan");
-        setTimeout(() => onOpenChange(false), 900);
+        setTimeout(() => onOpenChange(false), 1200);
       } else {
-        const msg = "No active Google Play subscription found for this account.";
+        const msg = "No active subscription found for this account.";
         setErrorMsg(msg);
         onSubscriptionResult?.(false, "Restore", msg);
       }
     } catch {
-      const msg = "Google Play service check completed without active subscription.";
+      const msg = "Subscription check completed.";
       setErrorMsg(msg);
       onSubscriptionResult?.(false, "Restore", msg);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCancelSub = () => {
+    cancelWebSubscription();
+    setReceiptDetails(null);
+    setSuccessMsg("Subscription cancelled.");
+    onRestore();
   };
 
   return (
@@ -104,7 +130,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         </DialogHeader>
 
         {errorMsg && (
-          <div className="p-3.5 rounded-2xl bg-muted/60 dark:bg-muted/40 border border-border/70 text-xs text-muted-foreground flex items-start gap-2.5 animate-in fade-in duration-200">
+          <div className="p-3.5 rounded-2xl bg-muted/60 dark:bg-muted/40 border border-border/70 text-xs text-muted-foreground flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-primary" />
             <div className="space-y-0.5">
               <span className="font-semibold text-foreground block">Subscription Notice</span>
@@ -120,11 +146,21 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
         )}
 
+        {receiptDetails && (
+          <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 text-xs space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-primary">
+              <Receipt className="w-4 h-4" /> Active Subscription Receipt
+            </div>
+            <div className="text-foreground/90 font-mono">Receipt ID: {receiptDetails.receiptId}</div>
+            <div className="text-muted-foreground">Receipt email sent to: {receiptDetails.email}</div>
+          </div>
+        )}
+
         {/* Plan Selection */}
         <div className="grid grid-cols-2 gap-3 my-2">
           {SUBSCRIPTIONS.map((plan) => {
             const isSelected = selectedPlan === plan.id;
-            const isBest = plan.id === "monthly" || plan.basePlanId === "monthly";
+            const isBest = plan.id === "monthly" || plan.basePlanId === "monthly-autorenewal";
             return (
               <div
                 key={plan.id}
@@ -145,15 +181,31 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                   <div className="text-lg font-extrabold text-foreground mt-0.5">{plan.price}</div>
                 </div>
                 <div className="mt-2 text-[11px] text-muted-foreground">
-                  Google Play Billed
+                  {isPlayBillingAvailable() ? "Google Play Billed" : "Instant Web Checkout"}
                 </div>
               </div>
             );
           })}
         </div>
 
+        {/* Email input for web checkout receipt */}
+        {!isPlayBillingAvailable() && (
+          <div className="space-y-1 my-1">
+            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5 text-primary" /> Email Address (for receipt & account sync)
+            </label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="h-10 rounded-xl text-xs"
+            />
+          </div>
+        )}
+
         {/* Features Checklist */}
-        <div className="space-y-2 py-2 text-xs text-foreground/80">
+        <div className="space-y-1.5 py-1 text-xs text-foreground/80">
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-primary shrink-0" />
             <span>Unlimited 2D Graphing Calculator</span>
@@ -170,14 +222,10 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             <Check className="w-4 h-4 text-primary shrink-0" />
             <span>Calculation history & PDF export reports</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>Zero advertisements, privacy-first offline math</span>
-          </div>
         </div>
 
         {/* Action Button */}
-        <div className="space-y-2 pt-2">
+        <div className="space-y-2 pt-1">
           <Button
             onClick={handleBuy}
             disabled={loading || isPro}
@@ -191,7 +239,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             ) : loading ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                Contacting Google Play...
+                Processing Subscription...
               </>
             ) : (
               <>
@@ -210,7 +258,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             >
               Restore Purchases
             </button>
-            <span>Cancel anytime in Google Play</span>
+            {isPro && webRecord ? (
+              <button
+                type="button"
+                onClick={handleCancelSub}
+                className="text-destructive hover:underline"
+              >
+                Cancel Subscription
+              </button>
+            ) : (
+              <span>Instant email receipt upon payment</span>
+            )}
           </div>
         </div>
       </DialogContent>
