@@ -1,8 +1,14 @@
 export const PLAY_BILLING_URL = "https://play.google.com/billing";
-export const SUBSCRIPTIONS = [
-  { id: "monthly", productId: "monthly", basePlanId: "monthly-autorenewal", price: "$6/month", cadence: "Monthly" },
-  { id: "weekly", productId: "weekly", basePlanId: "weekly-autorenewal", price: "$3 weekly", cadence: "Weekly" },
-] as const;
+
+export const LIFETIME_PRODUCT = {
+  id: "lifetime_premium",
+  productId: "lifetime_premium",
+  basePlanId: "lifetime_premium",
+  price: "$19.99",
+  cadence: "One-Time Lifetime Purchase",
+} as const;
+
+export const SUBSCRIPTIONS = [LIFETIME_PRODUCT] as const;
 
 export type SubscriptionPlan = (typeof SUBSCRIPTIONS)[number];
 
@@ -47,12 +53,7 @@ export async function getPlayBillingService() {
 
 export async function getSubscriptionDetails() {
   const service = await getPlayBillingService();
-  const ids = [
-    ...SUBSCRIPTIONS.map((plan) => plan.productId),
-    ...SUBSCRIPTIONS.map((plan) => plan.basePlanId),
-    ...SUBSCRIPTIONS.map((plan) => `${plan.productId}:${plan.basePlanId}`),
-  ];
-  return service.getDetails(Array.from(new Set(ids)));
+  return service.getDetails(["lifetime_premium"]);
 }
 
 export async function hasActivePlaySubscription(service?: DigitalGoodsService): Promise<boolean> {
@@ -60,7 +61,8 @@ export async function hasActivePlaySubscription(service?: DigitalGoodsService): 
   try {
     if (typeof window !== "undefined") {
       const billingStatus = localStorage.getItem("billing_status");
-      if (billingStatus === "active") {
+      const billingPlanId = localStorage.getItem("billing_plan_id");
+      if (billingStatus === "active" || billingPlanId === "lifetime_premium") {
         return true;
       }
     }
@@ -68,7 +70,7 @@ export async function hasActivePlaySubscription(service?: DigitalGoodsService): 
     // ignore
   }
 
-  // 2. Check web / preview subscription storage
+  // 2. Check web / preview purchase record
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem(WEB_SUB_STORAGE_KEY) : null;
     if (raw) {
@@ -89,25 +91,14 @@ export async function hasActivePlaySubscription(service?: DigitalGoodsService): 
     const hasActivePurchase = purchases.some((purchase) => {
       if (!purchase.purchaseToken) return false;
       const item = purchase.itemId?.toLowerCase() || "";
-      return SUBSCRIPTIONS.some((plan) => {
-        const planId = plan.id.toLowerCase();
-        const productId = plan.productId.toLowerCase();
-        const basePlan = plan.basePlanId.toLowerCase();
-        return (
-          item === planId ||
-          item === productId ||
-          item === basePlan ||
-          item.endsWith(`:${basePlan}`) ||
-          item.includes(basePlan) ||
-          item.includes(planId) ||
-          item.includes(productId)
-        );
-      });
+      return item === "lifetime_premium" || item.includes("lifetime");
     });
 
     if (hasActivePurchase) {
       try {
         localStorage.setItem("billing_status", "active");
+        localStorage.setItem("billing_plan_id", "lifetime_premium");
+        localStorage.setItem("lifetime_purchased", "true");
       } catch {
         // ignore
       }
@@ -120,45 +111,26 @@ export async function hasActivePlaySubscription(service?: DigitalGoodsService): 
 }
 
 export async function buySubscription(
-  productIdOrPlanId: string,
-  basePlanId?: string,
+  _productIdOrPlanId?: string,
+  _basePlanId?: string,
   email?: string
 ): Promise<{ success: boolean; receiptId: string; email: string }> {
-  // Find the target plan by id, product ID, or base plan ID
-  const product =
-    SUBSCRIPTIONS.find(
-      (plan) =>
-        plan.id === productIdOrPlanId ||
-        plan.productId === productIdOrPlanId ||
-        plan.basePlanId === productIdOrPlanId ||
-        plan.basePlanId === basePlanId
-    ) || (productIdOrPlanId.toLowerCase().includes("week") ? SUBSCRIPTIONS[1] : SUBSCRIPTIONS[0]);
+  const resolvedProductId = "lifetime_premium";
 
-  // Resolve both product ID and base plan ID explicitly
-  const resolvedProductId =
-    basePlanId && productIdOrPlanId !== basePlanId
-      ? productIdOrPlanId
-      : product.productId;
-
-  const resolvedBasePlanId =
-    basePlanId || product.basePlanId;
-
-  // If Google Play billing is available, use Google Play PaymentRequest with both product ID & base plan ID
+  // If Google Play billing is available, use Google Play PaymentRequest for one-time product lifetime_premium ($19.99)
   if (isPlayBillingAvailable()) {
     getSubscriptionDetails().catch(() => {});
-    const skuString = `${resolvedProductId}:${resolvedBasePlanId}`;
     const request = new PaymentRequest(
       [
         {
           supportedMethods: PLAY_BILLING_URL,
           data: {
-            sku: skuString,
+            sku: resolvedProductId,
             productId: resolvedProductId,
-            basePlanId: resolvedBasePlanId,
           },
         },
       ],
-      { total: { label: "Get Unlimited Access", amount: { currency: "USD", value: "0.00" } } }
+      { total: { label: "Lifetime Premium Access", amount: { currency: "USD", value: "19.99" } } }
     );
 
     let response: PaymentResponse | null = null;
@@ -172,13 +144,13 @@ export async function buySubscription(
         } catch {
           // ignore
         }
-        throw new Error("Google Play has not reported an active subscription yet.");
+        throw new Error("Google Play payment could not be verified.");
       }
 
-      // On success: save to localStorage billing_status = active and billing_plan_id = basePlanId, unlock all features immediately
       try {
         localStorage.setItem("billing_status", "active");
-        localStorage.setItem("billing_plan_id", resolvedBasePlanId);
+        localStorage.setItem("billing_plan_id", "lifetime_premium");
+        localStorage.setItem("lifetime_purchased", "true");
       } catch {
         // ignore
       }
@@ -190,10 +162,9 @@ export async function buySubscription(
         try {
           await response.complete("fail");
         } catch {
-          /* already completed */
+          /* ignore */
         }
       }
-      // On fail: save billing_status = failed and show error message
       try {
         localStorage.setItem("billing_status", "failed");
       } catch {
@@ -203,22 +174,22 @@ export async function buySubscription(
     }
   }
 
-  // Web / Browser Preview mode subscription checkout with email receipt
+  // Web / Browser Preview mode checkout with email receipt
   if (!email || !email.includes("@")) {
     try {
       localStorage.setItem("billing_status", "failed");
     } catch {
       // ignore
     }
-    throw new Error("Please enter a valid email address to receive your subscription receipt.");
+    throw new Error("Please enter a valid email address to receive your purchase receipt.");
   }
 
   // Simulate secure payment processing charge
   await new Promise((resolve) => setTimeout(resolve, 800));
 
-  const receiptId = `NUME-PRO-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+  const receiptId = `NUME-LIFETIME-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
   const record: WebSubscriptionRecord = {
-    planId: product.id,
+    planId: "lifetime_premium",
     email: email.trim(),
     receiptId,
     timestamp: Date.now(),
@@ -226,16 +197,16 @@ export async function buySubscription(
 
   try {
     localStorage.setItem(WEB_SUB_STORAGE_KEY, JSON.stringify(record));
-    // On success: save to localStorage billing_status = active and billing_plan_id = basePlanId, unlock all features immediately
     localStorage.setItem("billing_status", "active");
-    localStorage.setItem("billing_plan_id", resolvedBasePlanId);
+    localStorage.setItem("billing_plan_id", "lifetime_premium");
+    localStorage.setItem("lifetime_purchased", "true");
   } catch {
     try {
       localStorage.setItem("billing_status", "failed");
     } catch {
       // ignore
     }
-    throw new Error("Could not save subscription record locally.");
+    throw new Error("Could not save purchase record locally.");
   }
 
   return { success: true, receiptId, email: record.email };

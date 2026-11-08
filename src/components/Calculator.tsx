@@ -90,10 +90,6 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
   }, [expr, isRad, isPro]);
 
   const handleExportPdf = () => {
-    if (!isPro) {
-      onRequestUpgrade?.("History Saving & PDF Export");
-      return;
-    }
     const records = history.map((h) => ({
       expr: h.expr,
       result: h.result,
@@ -173,27 +169,12 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
         </div>
         <div className="flex items-center gap-1">
           <Sheet>
-            {!isPro ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 text-xs rounded-xl"
-                aria-label="History (Premium)"
-                onClick={() => onRequestUpgrade?.("History Saving")}
-              >
-                <HistoryIcon className="h-3.5 w-3.5" />
-                <span>History</span>
-                <Lock className="h-3 w-3 text-primary" />
-              </Button>
-            ) : (
             <SheetTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs rounded-xl" aria-label="History">
                 <HistoryIcon className="h-3.5 w-3.5" />
                 <span>History</span>
-                <PremiumLock label="PRO" className="ml-0.5" />
               </Button>
             </SheetTrigger>
-            )}
             <SheetContent className="w-full sm:max-w-md">
               <SheetHeader>
                 <SheetTitle className="flex items-center justify-between text-base">

@@ -8,6 +8,12 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { usePlayBilling } from "@/hooks/usePlayBilling";
 import { requestInAppReview } from "@/lib/inAppReview";
 import { useNetworkMode } from "@/lib/networkMode";
+import {
+  getFirstOpenTimestamp,
+  isWithinTrialPeriod,
+  isAppPermanentlyBlocked,
+  formatTrialTimeRemaining,
+} from "@/lib/trialManager";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,11 +32,11 @@ import {
   Sparkles,
   Sun,
   Moon,
-  ShieldCheck,
   Star,
-  Info,
   Wifi,
   WifiOff,
+  Clock,
+  ShieldAlert,
 } from "lucide-react";
 
 type TabKey = "calc" | "graph" | "equations" | "converter";
@@ -50,9 +56,33 @@ const Index = () => {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [featureTrigger, setFeatureTrigger] = useState<string>("");
   const [dark, setDark] = useState(false);
+  const [, setTimerTick] = useState(0);
 
   const { isPro, purchasePlan, checkSubscription } = usePlayBilling();
   const network = useNetworkMode();
+
+  // Initialize first open timestamp on mount & monitor trial expiration
+  useEffect(() => {
+    getFirstOpenTimestamp();
+  }, []);
+
+  const isBlocked = isAppPermanentlyBlocked(isPro);
+  const withinTrial = isWithinTrialPeriod();
+
+  // If user is permanently blocked after 1 day of usage without buying, force open upgrade paywall
+  useEffect(() => {
+    if (isBlocked && !isPro) {
+      setUpgradeOpen(true);
+    }
+  }, [isBlocked, isPro]);
+
+  // Periodic trial status tick (every 20s)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimerTick((t) => t + 1);
+    }, 20000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Dark/Light theme setup
   useEffect(() => {
@@ -68,6 +98,10 @@ const Index = () => {
   }, [dark]);
 
   const handleTabChange = (tab: TabKey) => {
+    if (isBlocked && !isPro) {
+      setUpgradeOpen(true);
+      return;
+    }
     setActiveTab(tab);
     setSearchParams({ tab });
   };
@@ -98,18 +132,18 @@ const Index = () => {
           <div className="flex items-center gap-2">
             {isPro ? (
               <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-primary text-primary-foreground flex items-center gap-1 shadow-xs">
-                <Sparkles className="w-3.5 h-3.5" /> PRO ACTIVE
+                <Sparkles className="w-3.5 h-3.5" /> LIFETIME PRO
               </span>
-            ) : (
+            ) : isBlocked ? (
               <Button
                 size="sm"
-                onClick={() => handleRequestUpgrade("Nume Pro")}
-                className="h-8 px-3 rounded-xl font-bold bg-primary hover:bg-primary/90 text-primary-foreground text-xs gap-1.5 shadow-xs"
+                onClick={() => handleRequestUpgrade("Lifetime Access")}
+                className="h-8 px-3 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white text-xs gap-1.5 shadow-xs"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Upgrade</span>
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>Unlock Pro ($19.99)</span>
               </Button>
-            )}
+            ) : null}
 
             <Button
               variant="outline"
@@ -184,7 +218,7 @@ const Index = () => {
           body={<PrivacyPolicy />}
         />
         <span className="text-muted-foreground/40">·</span>
-        <PolicyDialog title="About & Subscriptions" trigger="About" body={<About />} />
+        <PolicyDialog title="About & Licensing" trigger="About" body={<About />} />
         <span className="text-muted-foreground/40">·</span>
         <PolicyDialog title="Data Safety" trigger="Data" body={<DataSafety />} />
         <span className="text-muted-foreground/40">·</span>
@@ -199,12 +233,13 @@ const Index = () => {
         </Button>
       </footer>
 
-      {/* Upgrade Paywall Dialog */}
+      {/* Upgrade / Permanent Paywall Dialog */}
       <UpgradeModal
         open={upgradeOpen}
         onOpenChange={setUpgradeOpen}
         featureTrigger={featureTrigger}
         isPro={isPro}
+        isBlocked={isBlocked}
         onPurchase={purchasePlan}
         onRestore={checkSubscription}
       />
@@ -258,11 +293,11 @@ const PrivacyPolicy = () => (
     </p>
     <h3 className="font-semibold text-sm mt-3">Local Device Storage</h3>
     <p>
-      Calculation history and theme preferences are stored locally on your device in your browser's private local storage. This data never leaves your device and can be cleared at any time.
+      Calculation history and theme preferences are stored locally on your device in your browser's private local storage.
     </p>
-    <h3 className="font-semibold text-sm mt-3">Subscriptions & Google Play Billing</h3>
+    <h3 className="font-semibold text-sm mt-3">In-App Purchases & Google Play Billing</h3>
     <p>
-      Nume Pro subscriptions ($6/month and $3 weekly) are processed and managed securely through Google Play Digital Goods and Google Play In-App Billing for package <code>scientific.calculator.cm</code>. You can manage or cancel your subscription anytime in your Google Play Account settings.
+      Nume Pro offers a 1-day free trial followed by a single one-time lifetime purchase of <strong>$19.99</strong> (Product ID: <code>lifetime_premium</code>) processed through Google Play In-App Billing for package <code>scientific.calculator.cm</code>.
     </p>
     <h3 className="font-semibold text-sm mt-3">Advertising & Trackers</h3>
     <p>Nume contains zero third-party advertisements, zero trackers, and zero telemetry.</p>
@@ -272,23 +307,20 @@ const PrivacyPolicy = () => (
 const About = () => (
   <>
     <p>
-      <strong>Nume: Scientific Calculator Pro</strong> combines precision scientific arithmetic, 2D graphing, step-by-step linear & quadratic equation solving, and worldwide unit conversions in a single responsive app.
+      <strong>Nume: Scientific Calculator Pro</strong> combines precision scientific arithmetic, 2D graphing, step-by-step linear & quadratic equation solving, and worldwide unit conversions.
     </p>
     <h3 className="font-semibold text-sm mt-3">Features Included:</h3>
     <ul className="list-disc pl-5 space-y-1">
       <li>Unlimited scientific calculator with trigonometric, logarithmic, and power functions.</li>
-      <li>2D Graphing suite with interactive Cartesian coordinates and curve sampling.</li>
-      <li>Algebraic linear and quadratic equation solver with full mathematical working.</li>
-      <li>Worldwide currency converter and physical unit measurement converter.</li>
+      <li>2D Graphing suite with interactive Cartesian coordinates.</li>
+      <li>Algebraic linear and quadratic equation solver.</li>
+      <li>Worldwide currency converter and unit measurement converter.</li>
       <li>Calculation history with PDF report export.</li>
     </ul>
-    <h3 className="font-semibold text-sm mt-3">Google Play Pro Plans:</h3>
+    <h3 className="font-semibold text-sm mt-3">Lifetime Access Pricing:</h3>
     <p>
-      <strong>Monthly:</strong> $6.00 / month<br />
-      <strong>Weekly:</strong> $3.00 / week
-    </p>
-    <p className="text-muted-foreground mt-2">
-      Manage and cancel anytime via the Google Play Store application under Subscriptions.
+      <strong>Product ID:</strong> <code>lifetime_premium</code><br />
+      <strong>One-Time Purchase:</strong> $19.99 (No recurring subscriptions)
     </p>
   </>
 );
@@ -298,9 +330,8 @@ const DataSafety = () => (
     <h3 className="font-semibold text-sm">Google Play Data Safety Summary</h3>
     <ul className="list-disc pl-5 space-y-1.5">
       <li><strong>Data collected:</strong> None. Zero personal data collected.</li>
-      <li><strong>Data shared:</strong> None. No data shared with third parties or advertisers.</li>
+      <li><strong>Data shared:</strong> None. No data shared with third parties.</li>
       <li><strong>Security practices:</strong> All data stored strictly on device storage.</li>
-      <li><strong>User data deletion:</strong> Full user control over local calculations and cache.</li>
     </ul>
     <h3 className="font-semibold text-sm mt-3">Reset & Clear Local Data</h3>
     <p className="text-muted-foreground">

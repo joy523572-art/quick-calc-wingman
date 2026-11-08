@@ -5,11 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { UNIT_OPTIONS, CURRENCY_OPTIONS, UnitCategory, convertMeasurement } from "@/lib/unitConversion";
 import { crossRate, fetchLiveRates, readCachedRates, RateTable } from "@/lib/currencies";
-import { canAccessPremiumFeature } from "@/lib/freemium";
 import { useNetworkMode } from "@/lib/networkMode";
 import { formatWithCommas } from "@/lib/formatNumber";
-import { PremiumLock } from "@/components/PremiumLock";
-import { ArrowRightLeft, Lock, AlertCircle, Wifi, WifiOff } from "lucide-react";
+import { ArrowRightLeft, AlertCircle, Wifi, WifiOff } from "lucide-react";
 
 interface ConverterViewProps {
   isPro: boolean;
@@ -33,7 +31,7 @@ const DEFAULTS: Record<UnitCategory, [string, string]> = {
 const optionsFor = (c: UnitCategory): Record<string, string> =>
   c === "currency" ? CURRENCY_OPTIONS : (UNIT_OPTIONS[c] as Record<string, string>);
 
-export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUpgrade }) => {
+export const ConverterView: React.FC<ConverterViewProps> = () => {
   const [category, setCategory] = useState<UnitCategory>("currency");
   const [amount, setAmount] = useState("100");
   const [fromUnit, setFromUnit] = useState("USD");
@@ -43,17 +41,15 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
   const [rates, setRates] = useState<RateTable>(readCachedRates);
   const { online } = useNetworkMode();
 
-  const locked = !canAccessPremiumFeature(category, isPro);
-
   useEffect(() => {
-    if (!isPro || !online) {
+    if (!online) {
       setRates(readCachedRates());
       return;
     }
     const ctrl = new AbortController();
     fetchLiveRates(ctrl.signal).then(setRates).catch(() => setRates(readCachedRates()));
     return () => ctrl.abort();
-  }, [online, isPro]);
+  }, [online]);
 
   const options = useMemo(() => optionsFor(category), [category]);
 
@@ -65,10 +61,7 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
     setErrorMsg(null);
   };
 
-  const label = CATEGORIES.find((c) => c.key === category)?.label ?? "Unit";
-
   const handleConvert = () => {
-    if (locked) return onRequestUpgrade(`${label} Converter`);
     const num = parseFloat(amount.replace(/,/g, ""));
     if (isNaN(num)) return setErrorMsg("Please enter a valid number.");
     try {
@@ -98,20 +91,19 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
             type="button"
             onClick={() => pickCategory(c.key)}
             className={`py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 ${
-              category === c.key ? "bg-card text-foreground shadow-xs" : "text-muted-foreground"
+              category === c.key ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground"
             }`}
           >
             {c.label}
-            {!isPro && <Lock className="w-3 h-3 text-primary" />}
           </Button>
         ))}
       </div>
 
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{isPro ? "Unlimited Pro" : <PremiumLock />}</span>
+        <span>Unlimited Free Converter</span>
         {category === "currency" && (
           <span className="flex items-center gap-1">
-            {online ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />} {rateNote}
+            {online ? <Wifi className="w-3 h-3 text-emerald-500" /> : <WifiOff className="w-3 h-3 text-muted-foreground" />} {rateNote}
           </span>
         )}
       </div>
@@ -120,17 +112,15 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         value={amount}
         inputMode="decimal"
         onChange={(e) => setAmount(e.target.value)}
-        disabled={locked}
         className="h-11 rounded-xl font-mono"
         aria-label="Amount"
       />
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} disabled={locked} />
+        <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} />
         <Button
           variant="ghost"
           size="icon"
-          disabled={locked}
           aria-label="Swap units"
           onClick={() => {
             setFromUnit(toUnit);
@@ -139,11 +129,11 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         >
           <ArrowRightLeft className="w-4 h-4" />
         </Button>
-        <UnitSelect value={toUnit} onChange={setToUnit} options={options} disabled={locked} />
+        <UnitSelect value={toUnit} onChange={setToUnit} options={options} />
       </div>
 
       <Button onClick={handleConvert} className="w-full h-11 rounded-xl font-bold gap-2">
-        {locked ? (<><Lock className="w-4 h-4" /> Premium</>) : "Convert"}
+        Convert
       </Button>
 
       {errorMsg && (
@@ -152,19 +142,10 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         </div>
       )}
 
-      {isPro && result && (
+      {result && (
         <div className="p-4 rounded-2xl bg-muted/50 border border-border">
           <div className="text-xs text-muted-foreground">{amount} {fromUnit} =</div>
           <div className="text-2xl font-extrabold font-mono text-primary break-all">{result} {toUnit}</div>
-        </div>
-      )}
-
-      {locked && (
-        <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-xs flex items-center justify-between gap-2">
-          <span className="flex items-center gap-2"><PremiumLock /> {label} conversion requires Premium.</span>
-          <Button size="sm" onClick={() => onRequestUpgrade(`${label} Converter`)} className="h-7 text-xs rounded-lg font-bold">
-            Get Unlimited Access
-          </Button>
         </div>
       )}
     </Card>
