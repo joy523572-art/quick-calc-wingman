@@ -6,24 +6,16 @@ export function recordActiveDay(): void {
 
   try {
     const today = new Date().toDateString();
-    let activeDays: string[] = [];
-    const raw = localStorage.getItem("activeDays");
-    if (raw) {
-      try {
-        activeDays = JSON.parse(raw);
-      } catch {
-        activeDays = [];
-      }
-    }
+    let activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
     if (!Array.isArray(activeDays)) activeDays = [];
 
     if (!activeDays.includes(today)) {
       activeDays.push(today);
-      localStorage.setItem("activeDays", JSON.stringify(activeDays));
+      localStorage.setItem('activeDays', JSON.stringify(activeDays));
     }
 
-    if (!localStorage.getItem("first_open_date")) {
-      localStorage.setItem("first_open_date", Date.now().toString());
+    if (!localStorage.getItem('first_open_date')) {
+      localStorage.setItem('first_open_date', Date.now().toString());
     }
   } catch {
     // ignore
@@ -33,7 +25,7 @@ export function recordActiveDay(): void {
 export function saveFirstOpenTimestamp(ts: number): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem("first_open_date", ts.toString());
+    localStorage.setItem('first_open_date', ts.toString());
   } catch {
     // ignore
   }
@@ -45,22 +37,28 @@ export function isAppPermanentlyBlocked(isPro: boolean): boolean {
   try {
     if (typeof window === "undefined") return false;
 
-    const activeDays = JSON.parse(localStorage.getItem("activeDays") || "[]");
+    const activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
     const isLifetime =
-      localStorage.getItem("lifetime_purchased") === "true" ||
-      localStorage.getItem("billing_status") === "active" ||
-      localStorage.getItem("billing_plan_id") === "lifetime_premium";
-    const firstOpen = parseInt(localStorage.getItem("first_open_date") || "0", 10);
+      localStorage.getItem('lifetime_purchased') === 'true' ||
+      localStorage.getItem('billing_status') === 'active' ||
+      localStorage.getItem('billing_plan_id') === 'lifetime_premium';
+    const firstOpen = parseInt(localStorage.getItem('first_open_date') || '0', 10);
     const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
 
     if (isLifetime) {
-      return false; // allow app
+      // allow app
+      return false;
     } else if (Array.isArray(activeDays) && activeDays.length > 3) {
-      return true; // block - used 3 days
+      // block - used 3 days
+      // show lifetime paywall for product lifetime_premium $19.99
+      return true;
     } else if (firstOpen > 0 && Date.now() - firstOpen > SEVEN_DAYS) {
-      return true; // block - 7 calendar days max
+      // block - 7 calendar days max
+      // show lifetime paywall
+      return true;
     } else {
-      return false; // allow free trial
+      // allow free trial
+      return false;
     }
   } catch {
     return false;
@@ -73,7 +71,7 @@ export function isWithinTrialPeriod(): boolean {
 
 export function getFirstOpenTimestamp(): number {
   recordActiveDay();
-  const raw = localStorage.getItem("first_open_date");
+  const raw = localStorage.getItem('first_open_date');
   if (raw) {
     const p = parseInt(raw, 10);
     if (!isNaN(p) && p > 0) return p;
@@ -83,7 +81,7 @@ export function getFirstOpenTimestamp(): number {
 
 export function formatTrialTimeRemaining(): string {
   try {
-    const activeDays = JSON.parse(localStorage.getItem("activeDays") || "[]");
+    const activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
     const count = Array.isArray(activeDays) ? activeDays.length : 1;
     const remaining = Math.max(0, 4 - count);
     if (remaining <= 0) return "Trial Ended (3 days used)";
