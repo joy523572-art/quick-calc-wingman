@@ -7,7 +7,7 @@ import { canAccessPremiumFeature } from "@/lib/freemium";
 import { downloadTextPdf } from "@/lib/historyExport";
 import { useNetworkMode } from "@/lib/networkMode";
 import { PremiumLock } from "@/components/PremiumLock";
-import { Lock, AlertCircle, CheckCircle2, Camera, FileDown, Loader2 } from "lucide-react";
+import { Lock, AlertCircle, CheckCircle2, Camera, Upload, FileDown, Loader2 } from "lucide-react";
 
 interface EquationSolverViewProps {
   isPro: boolean;
@@ -30,7 +30,8 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   const [solvedEq, setSolvedEq] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraFileRef = useRef<HTMLInputElement>(null);
+  const galleryFileRef = useRef<HTMLInputElement>(null);
   const { online } = useNetworkMode();
 
   const locked = !canAccessPremiumFeature("equation", isPro);
@@ -52,13 +53,22 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
     }
   };
 
+  const openGallery = () => {
+    if (!canAccessPremiumFeature("equation_camera", isPro)) return onRequestUpgrade("Photo Equation Upload");
+    if (!online) {
+      setErrorMsg("Photo upload OCR needs Online mode the first time it reads text. Switch to Online and try again.");
+      return;
+    }
+    galleryFileRef.current?.click();
+  };
+
   const openCamera = () => {
     if (!canAccessPremiumFeature("equation_camera", isPro)) return onRequestUpgrade("Camera Equation Scan");
     if (!online) {
       setErrorMsg("Camera scan needs Online mode the first time it reads text. Switch to Online and try again.");
       return;
     }
-    fileRef.current?.click();
+    cameraFileRef.current?.click();
   };
 
   const onPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,15 +101,12 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
     );
   };
 
-
   return (
     <Card className="rounded-3xl border border-border bg-card shadow-lg p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-muted-foreground">Enter equation</label>
-        {isPro ? (
+        <label className="text-xs font-semibold text-muted-foreground">Enter or upload equation</label>
+        {isPro && (
           <span className="text-[11px] text-muted-foreground">Unlimited Pro</span>
-        ) : (
-          <PremiumLock />
         )}
       </div>
 
@@ -116,21 +123,46 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
           placeholder="e.g. 2x + 5 = 15 or x² - 5x + 6 = 0"
           className="min-h-[140px] w-full p-3 rounded-2xl text-sm font-mono resize-y bg-muted/30 disabled:opacity-50"
         />
-        <div className="flex justify-end text-[11px] text-muted-foreground px-1">{inputEq.length} / 4000</div>
+        <div className="flex justify-between text-[11px] text-muted-foreground px-1">
+          <span>Upload photo or type math expression</span>
+          <span>{inputEq.length} / 4000</span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_auto] gap-2">
+      {/* Action buttons: Solve, Photo Upload, and Camera Scan */}
+      <div className="grid grid-cols-[1fr_auto_auto] gap-1.5 sm:gap-2">
         <Button onClick={handleSolve} className="h-11 rounded-xl font-bold gap-2">
           {locked ? (<><Lock className="w-4 h-4" /> Premium</>) : "Solve Equation"}
         </Button>
-        <Button variant="outline" onClick={openCamera} disabled={scanning} className="h-11 rounded-xl gap-1.5" aria-label="Scan equation with camera">
-          {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-          <span className="text-xs">Scan</span>
-          {!isPro && <Lock className="w-3 h-3 text-primary" />}
+        <Button
+          variant="outline"
+          onClick={openGallery}
+          disabled={scanning}
+          className="h-11 px-3 rounded-xl gap-1.5"
+          aria-label="Upload photo of equation"
+          title="Upload photo from gallery or files"
+        >
+          {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+          <span className="text-xs">Upload</span>
         </Button>
-        <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
+        <Button
+          variant="outline"
+          onClick={openCamera}
+          disabled={scanning}
+          className="h-11 px-3 rounded-xl gap-1.5"
+          aria-label="Scan equation with camera"
+          title="Take photo with camera"
+        >
+          {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+          <span className="text-xs">Camera</span>
+        </Button>
       </div>
-      {scanning && <p className="text-xs text-muted-foreground">Reading equation from photo…</p>}
+
+      {/* Hidden file inputs */}
+      <input ref={galleryFileRef} type="file" accept="image/*" className="hidden" onChange={onPhoto} />
+      <input ref={cameraFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
+
+      {scanning && <p className="text-xs text-muted-foreground animate-pulse">Reading equation from photo…</p>}
 
       {errorMsg && (
         <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-center gap-2">
@@ -147,7 +179,6 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
             </span>
             <Button size="sm" variant="outline" onClick={downloadPdf} className="h-7 text-xs gap-1 rounded-lg">
               <FileDown className="w-3.5 h-3.5" /> PDF
-              {!isPro && <Lock className="w-3 h-3 text-primary" />}
             </Button>
           </div>
           <div className="text-xl font-extrabold font-mono">{solution.summary}</div>
