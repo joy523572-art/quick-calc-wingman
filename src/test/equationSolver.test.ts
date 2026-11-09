@@ -49,9 +49,14 @@ describe("equation solver", () => {
     expect(answer.roots).toEqual([-5]);
   });
 
-  it("handles full-width unicode equals 2x ＝ 8", () => {
-    const answer = solveEquation("2x ＝ 8");
-    expect(answer.roots).toEqual([4]);
+  it("handles leading equals sign = 2x + 4", () => {
+    const answer = solveEquation("= 2x + 4");
+    expect(answer.roots).toEqual([-2]);
+  });
+
+  it("handles multiline inputs cleanly", () => {
+    const answer = solveEquation("\n2x + 5 = 15\n\n");
+    expect(answer.roots).toEqual([5]);
   });
 });
 

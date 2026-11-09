@@ -76,7 +76,11 @@ function polynomialFromExpression(expression: string): Polynomial {
 }
 
 export function solveEquation(input: string): EquationSolution {
-  let normalized = input
+  // Extract line with equals or first non-empty line
+  const lines = input.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const raw = lines.find((l) => l.includes("=") || l.includes("＝")) || lines[0] || "";
+
+  let normalized = raw
     .trim()
     .replace(/＝/g, "=")
     .replace(/[⁰¹²³]/g, (digit) => `^${"⁰¹²³".indexOf(digit)}`)
@@ -86,11 +90,13 @@ export function solveEquation(input: string): EquationSolution {
     .replace(/,/g, "")
     .replace(/X/g, "x");
 
-  // If user omitted equals sign or left a trailing equals, normalize to `= 0`
+  // If user omitted equals sign, normalize to `= 0`
   if (!normalized.includes("=")) {
     normalized = `${normalized} = 0`;
   } else if (normalized.trim().endsWith("=")) {
     normalized = `${normalized} 0`;
+  } else if (normalized.trim().startsWith("=")) {
+    normalized = `0 ${normalized}`;
   }
 
   // Insert explicit * for implicit multiplications like 2(x+1), (x-1)(x+2), 3x, etc.

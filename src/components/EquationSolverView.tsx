@@ -40,10 +40,10 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   const [solvedEq, setSolvedEq] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [isSolving, setIsSolving] = useState(false);
   const cameraFileRef = useRef<HTMLInputElement>(null);
   const galleryFileRef = useRef<HTMLInputElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
-  const lastSolveRef = useRef<number>(0);
   const { online } = useNetworkMode();
 
   const locked = !canAccessPremiumFeature("equation", isPro);
@@ -56,34 +56,40 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
       setSolution(null);
       return;
     }
+
+    // Dismiss virtual keyboard cleanly without breaking pointer events
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+
+    setIsSolving(true);
     try {
       const res = solveEquation(target);
       setErrorMsg(null);
       setSolution(res);
       setSolvedEq(target);
+
+      // Only scroll if solution is below viewport fold
       setTimeout(() => {
-        resultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (resultRef.current) {
+          const rect = resultRef.current.getBoundingClientRect();
+          if (rect.bottom > window.innerHeight) {
+            resultRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+          }
+        }
       }, 60);
     } catch (err: unknown) {
       setErrorMsg((err as Error)?.message || "Unable to solve equation. Check syntax (e.g. 2x + 5 = 15).");
       setSolution(null);
-      setTimeout(() => {
-        resultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }, 60);
+    } finally {
+      setTimeout(() => setIsSolving(false), 120);
     }
-  };
-
-  const triggerSolve = (overrideEq?: string) => {
-    const now = Date.now();
-    if (now - lastSolveRef.current < 200) return;
-    lastSolveRef.current = now;
-    handleSolve(overrideEq);
   };
 
   const handlePresetClick = (preset: string) => {
     setInputEq(preset);
     setErrorMsg(null);
-    triggerSolve(preset);
+    handleSolve(preset);
   };
 
   const openGallery = () => {
@@ -117,7 +123,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
       const eq = cleanOcr(data.text || "");
       if (!eq || !eq.includes("=")) throw new Error("No equation found in the photo. Try a clearer, closer shot.");
       setInputEq(eq.slice(0, 4000));
-      triggerSolve(eq.slice(0, 4000));
+      handleSolve(eq.slice(0, 4000));
     } catch (err) {
       setErrorMsg((err as Error)?.message || "Could not read the photo. Please try again.");
     } finally {
@@ -155,7 +161,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          triggerSolve();
+          handleSolve();
         }}
         className="space-y-4"
       >
@@ -182,7 +188,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                triggerSolve();
+                handleSolve();
               }
             }}
             placeholder="e.g. 2x + 5 = 15 or x² - 5x + 6 = 0"
@@ -203,12 +209,8 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
                 key={preset}
                 type="button"
                 disabled={locked}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  handlePresetClick(preset);
-                }}
                 onClick={() => handlePresetClick(preset)}
-                className="px-2.5 py-1 rounded-xl text-xs font-mono bg-muted/50 hover:bg-primary/10 hover:text-primary active:scale-95 transition border border-border/60 text-foreground/80 cursor-pointer disabled:opacity-50 touch-manipulation"
+                className="px-2.5 py-1 rounded-xl text-xs font-mono bg-muted/50 hover:bg-primary/10 hover:text-primary active:scale-95 transition border border-border/60 text-foreground/80 cursor-pointer disabled:opacity-50"
               >
                 {preset}
               </button>
@@ -220,32 +222,32 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         <div className="grid grid-cols-[1fr_auto_auto] gap-2 pt-1">
           <Button
             type="submit"
-            onPointerDown={(e) => {
-              // Executing immediately on pointerdown prevents mobile keyboard blur/viewport shift from canceling synthetic click
-              e.preventDefault();
-              triggerSolve();
-            }}
-            onClick={() => triggerSolve()}
-            className="h-12 min-h-[48px] rounded-xl font-bold gap-2 text-sm bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm active:scale-[0.98] transition cursor-pointer select-none touch-manipulation"
+            onClick={() => handleSolve()}
+            disabled={isSolving}
+            className="h-12 min-h-[48px] rounded-xl font-bold gap-2 text-sm bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm active:scale-95 transition-all cursor-pointer"
           >
-            {locked ? (
+            {isSolving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Solving…</span>
+              </>
+            ) : locked ? (
               <>
                 <Lock className="w-4 h-4" /> Premium
               </>
             ) : (
-              "Solve Equation"
+              <>
+                <Calculator className="w-4 h-4" />
+                <span>Solve Equation</span>
+              </>
             )}
           </Button>
           <Button
             type="button"
             variant="outline"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              openGallery();
-            }}
             onClick={openGallery}
             disabled={scanning}
-            className="h-12 min-h-[48px] px-3 rounded-xl gap-1.5 hover:bg-muted active:scale-[0.98] transition cursor-pointer touch-manipulation"
+            className="h-12 min-h-[48px] px-3 rounded-xl gap-1.5 hover:bg-muted active:scale-95 transition-all cursor-pointer"
             aria-label="Upload photo of equation"
             title="Upload photo from gallery or files"
           >
@@ -255,13 +257,9 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
           <Button
             type="button"
             variant="outline"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              openCamera();
-            }}
             onClick={openCamera}
             disabled={scanning}
-            className="h-12 min-h-[48px] px-3 rounded-xl gap-1.5 hover:bg-muted active:scale-[0.98] transition cursor-pointer touch-manipulation"
+            className="h-12 min-h-[48px] px-3 rounded-xl gap-1.5 hover:bg-muted active:scale-95 transition-all cursor-pointer"
             aria-label="Scan equation with camera"
             title="Take photo with camera"
           >
