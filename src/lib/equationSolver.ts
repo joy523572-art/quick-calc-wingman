@@ -14,13 +14,19 @@ type MathNodeLike = {
   isOperatorNode?: boolean;
   op?: string;
   args?: MathNodeLike[];
+  isParenthesisNode?: boolean;
+  content?: MathNodeLike;
+  type?: string;
 };
 
 function polynomialFromExpression(expression: string): Polynomial {
   const node = parse(expression) as unknown as MathNodeLike;
   const visit = (part: MathNodeLike): Polynomial => {
+    if (part.isParenthesisNode || part.type === "ParenthesisNode" || ("content" in part && part.content)) {
+      return visit((part as { content: MathNodeLike }).content);
+    }
     if (part.isConstantNode && typeof part.value === "number") return [part.value, 0, 0];
-    if (part.isSymbolNode && part.name === "x") return [0, 1, 0];
+    if (part.isSymbolNode && (part.name === "x" || part.name?.toLowerCase() === "x")) return [0, 1, 0];
     if (part.isOperatorNode) {
       const args = part.args ?? [];
       if (part.op === "+" || part.op === "-") {
@@ -70,15 +76,29 @@ function polynomialFromExpression(expression: string): Polynomial {
 }
 
 export function solveEquation(input: string): EquationSolution {
-  const normalized = input
+  let normalized = input
     .trim()
+    .replace(/＝/g, "=")
     .replace(/[⁰¹²³]/g, (digit) => `^${"⁰¹²³".indexOf(digit)}`)
-    .replace(/[−–]/g, "-")
+    .replace(/[−–—]/g, "-")
     .replace(/[×·]/g, "*")
     .replace(/÷/g, "/")
     .replace(/,/g, "")
-    .replace(/(\d)(x)/gi, "$1*$2")
-    .replace(/(x)(\d)/gi, "$1*$2");
+    .replace(/X/g, "x");
+
+  // If user omitted equals sign or left a trailing equals, normalize to `= 0`
+  if (!normalized.includes("=")) {
+    normalized = `${normalized} = 0`;
+  } else if (normalized.trim().endsWith("=")) {
+    normalized = `${normalized} 0`;
+  }
+
+  // Insert explicit * for implicit multiplications like 2(x+1), (x-1)(x+2), 3x, etc.
+  normalized = normalized
+    .replace(/(\d)\s*([a-zA-Z(])/g, "$1*$2")
+    .replace(/([a-zA-Z])\s*(\d)/g, "$1*$2")
+    .replace(/\)\s*([a-zA-Z\d(])/g, ")*$1");
+
   const sides = normalized.split("=");
   if (sides.length !== 2 || !sides[0].trim() || !sides[1].trim()) {
     throw new Error("Enter one equation with an equals sign, for example 2x+5=15.");

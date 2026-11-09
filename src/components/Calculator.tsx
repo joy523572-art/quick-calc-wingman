@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { evaluate } from "mathjs";
-import { Delete, History as HistoryIcon, Trash2, FileDown, Lock } from "lucide-react";
+import { Delete, History as HistoryIcon, Trash2, FileDown, Lock, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -13,6 +13,8 @@ import { noteSuccessfulCalculation } from "@/lib/inAppReview";
 import { downloadHistoryPdf } from "@/lib/historyExport";
 import { canSaveHistory } from "@/lib/freemium";
 import { PremiumLock } from "@/components/PremiumLock";
+import { copyToClipboard } from "@/lib/clipboard";
+import { toast } from "@/hooks/use-toast";
 
 export type HistoryItem = { expr: string; result: string };
 
@@ -30,6 +32,36 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
   const [isInv, setIsInv] = useState(false);
   const [memory, setMemory] = useState(0);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [copied, setCopied] = useState(false);
+  const [copiedHistoryIndex, setCopiedHistoryIndex] = useState<number | null>(null);
+
+  const handleCopyCurrent = async () => {
+    const val = result || expr;
+    if (!val || val === "Error") return;
+    const ok = await copyToClipboard(val);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Answer copied",
+        description: `"${val}" copied to clipboard.`,
+      });
+    }
+  };
+
+  const handleCopyHistory = async (val: string, index: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!val) return;
+    const ok = await copyToClipboard(val);
+    if (ok) {
+      setCopiedHistoryIndex(index);
+      setTimeout(() => setCopiedHistoryIndex(null), 2000);
+      toast({
+        title: "Answer copied",
+        description: `"${val}" copied to clipboard.`,
+      });
+    }
+  };
 
   useEffect(() => {
     try {
@@ -208,18 +240,35 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
                   </p>
                 )}
                 {history.map((h, i) => (
-                  <button
+                  <div
                     key={i}
                     onClick={() => setExpr(h.result)}
-                    className="w-full text-left p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/50 transition space-y-0.5"
+                    className="w-full text-left p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/50 transition flex items-center justify-between gap-2 cursor-pointer group"
                   >
-                    <div className="text-xs font-mono text-muted-foreground truncate">
-                      {groupDigits(h.expr)}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="text-xs font-mono text-muted-foreground truncate">
+                        {groupDigits(h.expr)}
+                      </div>
+                      <div className="text-base font-mono font-bold text-primary truncate">
+                        = {groupDigits(h.result)}
+                      </div>
                     </div>
-                    <div className="text-base font-mono font-bold text-primary truncate">
-                      = {groupDigits(h.result)}
-                    </div>
-                  </button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                      onClick={(e) => handleCopyHistory(h.result, i, e)}
+                      className="h-8 px-2.5 text-xs gap-1.5 text-muted-foreground hover:text-foreground shrink-0 rounded-lg cursor-pointer"
+                      title="Copy this answer"
+                    >
+                      {copiedHistoryIndex === i ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" />
+                      )}
+                      <span className="text-[11px] font-medium">{copiedHistoryIndex === i ? "Copied!" : "Copy"}</span>
+                    </Button>
+                  </div>
                 ))}
               </div>
             </SheetContent>
@@ -233,8 +282,8 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
         style={{ background: "var(--gradient-display)" }}
         aria-live="polite"
       >
-        <div className="flex justify-between text-xs opacity-70 mb-2">
-          <div className="flex gap-2">
+        <div className="flex justify-between items-center text-xs opacity-70 mb-2">
+          <div className="flex gap-2 items-center">
             <button
               onClick={() => setIsRad((v) => !v)}
               className={`px-2.5 py-1 rounded-lg font-bold text-xs transition ${
@@ -257,6 +306,17 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
               </span>
             )}
           </div>
+          {(result || expr) && result !== "Error" && (
+            <button
+              type="button"
+              onClick={handleCopyCurrent}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 active:scale-95 transition text-xs font-semibold cursor-pointer shadow-xs"
+              title="Copy answer at once"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? "Copied!" : "Copy Answer"}</span>
+            </button>
+          )}
         </div>
         <div
           ref={exprRef}
@@ -266,7 +326,9 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
         </div>
         <div
           ref={resultRef}
-          className={`text-right font-semibold tracking-tight min-h-[3.5rem] flex items-center justify-end overflow-x-auto whitespace-nowrap no-scrollbar font-mono ${resultSizeClass}`}
+          onClick={handleCopyCurrent}
+          title="Click to copy answer at once"
+          className={`text-right font-semibold tracking-tight min-h-[3.5rem] flex items-center justify-end overflow-x-auto whitespace-nowrap no-scrollbar font-mono cursor-pointer select-none hover:opacity-90 active:scale-[0.99] transition ${resultSizeClass}`}
         >
           {groupDigits(result) || (expr ? "" : "0")}
         </div>

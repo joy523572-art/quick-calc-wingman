@@ -7,7 +7,9 @@ import { UNIT_OPTIONS, CURRENCY_OPTIONS, UnitCategory, convertMeasurement } from
 import { crossRate, fetchLiveRates, readCachedRates, RateTable } from "@/lib/currencies";
 import { useNetworkMode } from "@/lib/networkMode";
 import { formatWithCommas } from "@/lib/formatNumber";
-import { ArrowRightLeft, AlertCircle, Wifi, WifiOff } from "lucide-react";
+import { ArrowRightLeft, AlertCircle, Wifi, WifiOff, Copy, Check } from "lucide-react";
+import { copyToClipboard } from "@/lib/clipboard";
+import { toast } from "@/hooks/use-toast";
 
 interface ConverterViewProps {
   isPro: boolean;
@@ -39,7 +41,22 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
   const [result, setResult] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [rates, setRates] = useState<RateTable>(readCachedRates);
+  const [copied, setCopied] = useState(false);
   const { online } = useNetworkMode();
+
+  const handleCopyResult = async () => {
+    if (!result) return;
+    const textToCopy = `${result} ${toUnit}`;
+    const ok = await copyToClipboard(textToCopy);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Answer copied",
+        description: `"${textToCopy}" copied to clipboard.`,
+      });
+    }
+  };
 
   useEffect(() => {
     if (!online) {
@@ -143,9 +160,30 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
       )}
 
       {result && (
-        <div className="p-4 rounded-2xl bg-muted/50 border border-border">
-          <div className="text-xs text-muted-foreground">{amount} {fromUnit} =</div>
-          <div className="text-2xl font-extrabold font-mono text-primary break-all">{result} {toUnit}</div>
+        <div className="p-4 rounded-2xl bg-muted/50 border border-border flex items-center justify-between gap-3">
+          <div
+            onClick={handleCopyResult}
+            className="cursor-pointer group flex-1"
+            title="Click or tap to copy answer at once"
+          >
+            <div className="text-xs text-muted-foreground">{amount} {fromUnit} =</div>
+            <div className="text-2xl font-extrabold font-mono text-primary break-all group-hover:opacity-90 transition">
+              {result} {toUnit}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={handleCopyResult}
+            className={`h-9 px-3 text-xs gap-1.5 rounded-xl font-medium shrink-0 cursor-pointer transition ${
+              copied ? "border-emerald-500/50 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30" : ""
+            }`}
+            title="Copy answer at once"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copied ? "Copied!" : "Copy"}</span>
+          </Button>
         </div>
       )}
     </Card>
