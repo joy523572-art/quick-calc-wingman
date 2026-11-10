@@ -2,12 +2,13 @@ import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { solveEquation, EquationSolution } from "@/lib/equationSolver";
+import { solveEquation } from "@/lib/equationSolver";
+import { solveEquationWithAiFallback, EquationAiResult } from "@/lib/aiFallbackSystem";
 import { canAccessPremiumFeature } from "@/lib/freemium";
 import { downloadTextPdf } from "@/lib/historyExport";
 import { useNetworkMode } from "@/lib/networkMode";
 import { PremiumLock } from "@/components/PremiumLock";
-import { Lock, AlertCircle, CheckCircle2, Camera, Upload, FileDown, Loader2, Calculator, Copy, Check } from "lucide-react";
+import { Lock, AlertCircle, CheckCircle2, Camera, Upload, FileDown, Loader2, Calculator, Copy, Check, Sparkles } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
 
@@ -36,7 +37,7 @@ const PRESETS = [
 
 export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, onRequestUpgrade }) => {
   const [inputEq, setInputEq] = useState("2x + 5 = 15");
-  const [solution, setSolution] = useState<EquationSolution | null>(null);
+  const [solution, setSolution] = useState<EquationAiResult | null>(null);
   const [solvedEq, setSolvedEq] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -48,7 +49,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
 
   const locked = !canAccessPremiumFeature("equation", isPro);
 
-  const handleSolve = (overrideEq?: string) => {
+  const handleSolve = async (overrideEq?: string) => {
     if (locked) return onRequestUpgrade("Equation Solver");
     const target = (overrideEq !== undefined ? overrideEq : inputEq).trim();
     if (!target) {
@@ -64,7 +65,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
 
     setIsSolving(true);
     try {
-      const res = solveEquation(target);
+      const res = await solveEquationWithAiFallback(target);
       setErrorMsg(null);
       setSolution(res);
       setSolvedEq(target);
@@ -78,11 +79,22 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
           }
         }
       }, 60);
-    } catch (err: unknown) {
-      setErrorMsg((err as Error)?.message || "Unable to solve equation. Check syntax (e.g. 2x + 5 = 15).");
-      setSolution(null);
+    } catch {
+      // Zero-error safety net: always fall back to local deterministic engine
+      try {
+        const localRes = solveEquation(target);
+        setErrorMsg(null);
+        setSolution({
+          ...localRes,
+          providerUsed: "Local Deterministic Engine",
+        });
+        setSolvedEq(target);
+      } catch (err: unknown) {
+        setErrorMsg((err as Error)?.message || "Check syntax, e.g. 2x + 5 = 15.");
+        setSolution(null);
+      }
     } finally {
-      setTimeout(() => setIsSolving(false), 120);
+      setIsSolving(false);
     }
   };
 
@@ -288,9 +300,16 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         {solution && (
           <div className="p-4 rounded-2xl bg-muted/40 border border-border/80 space-y-3 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-primary flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-primary" /> Solution
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-primary" /> Solution
+                </span>
+                {solution.providerUsed && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> {solution.providerUsed}
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button
                   size="sm"
@@ -339,6 +358,20 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
                 )}
               </div>
             </div>
+
+            {/* Educational Formula Note or Definition if available */}
+            {solution.formulaNote && (
+              <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/10 text-xs text-foreground/80 leading-relaxed font-sans">
+                <span className="font-semibold text-primary">Formula Note: </span>
+                {solution.formulaNote}
+              </div>
+            )}
+            {solution.definition && (
+              <div className="p-2.5 rounded-xl bg-muted/60 border border-border/60 text-xs text-muted-foreground leading-relaxed font-sans">
+                <span className="font-semibold text-foreground">Standard Theory: </span>
+                {solution.definition}
+              </div>
+            )}
             <div className="pt-2 border-t border-border/60 space-y-2">
               <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Step-by-step working</div>
               {solution.steps.map((st, idx) => (

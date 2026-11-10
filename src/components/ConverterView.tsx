@@ -7,9 +7,10 @@ import { UNIT_OPTIONS, CURRENCY_OPTIONS, UnitCategory, convertMeasurement } from
 import { crossRate, fetchLiveRates, readCachedRates, RateTable } from "@/lib/currencies";
 import { useNetworkMode } from "@/lib/networkMode";
 import { formatWithCommas } from "@/lib/formatNumber";
-import { ArrowRightLeft, AlertCircle, Wifi, WifiOff, Copy, Check } from "lucide-react";
+import { ArrowRightLeft, AlertCircle, Wifi, WifiOff, Copy, Check, Sparkles, Loader2 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
+import { convertWithAiFallback, ConversionAiResult } from "@/lib/aiFallbackSystem";
 
 interface ConverterViewProps {
   isPro: boolean;
@@ -39,9 +40,11 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
   const [fromUnit, setFromUnit] = useState("USD");
   const [toUnit, setToUnit] = useState("EUR");
   const [result, setResult] = useState("");
+  const [aiResult, setAiResult] = useState<ConversionAiResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [rates, setRates] = useState<RateTable>(readCachedRates);
   const [copied, setCopied] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
   const { online } = useNetworkMode();
 
   const handleCopyResult = async () => {
@@ -75,19 +78,37 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
     setFromUnit(DEFAULTS[c][0]);
     setToUnit(DEFAULTS[c][1]);
     setResult("");
+    setAiResult(null);
     setErrorMsg(null);
   };
 
-  const handleConvert = () => {
+  const handleConvert = async () => {
     const num = parseFloat(amount.replace(/,/g, ""));
     if (isNaN(num)) return setErrorMsg("Please enter a valid number.");
+    setIsConverting(true);
     try {
       const rate = category === "currency" ? crossRate(rates, fromUnit, toUnit) : undefined;
-      const res = convertMeasurement(num, category, fromUnit, toUnit, rate);
+      const res = await convertWithAiFallback(num, category, fromUnit, toUnit, rate);
       setErrorMsg(null);
-      setResult(formatWithCommas(Number(res.toPrecision(10))));
-    } catch (err) {
-      setErrorMsg((err as Error)?.message || "Conversion failed.");
+      setResult(formatWithCommas(res.numericResult));
+      setAiResult(res);
+    } catch {
+      // Zero-error safety net: fallback to local deterministic conversion
+      try {
+        const rate = category === "currency" ? crossRate(rates, fromUnit, toUnit) : undefined;
+        const localNum = convertMeasurement(num, category, fromUnit, toUnit, rate);
+        setErrorMsg(null);
+        setResult(formatWithCommas(Number(localNum.toPrecision(10))));
+        setAiResult({
+          numericResult: localNum,
+          formattedResult: String(localNum),
+          providerUsed: "Local Deterministic Engine",
+        });
+      } catch (err) {
+        setErrorMsg((err as Error)?.message || "Conversion failed.");
+      }
+    } finally {
+      setIsConverting(false);
     }
   };
 
@@ -149,8 +170,19 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
         <UnitSelect value={toUnit} onChange={setToUnit} options={options} />
       </div>
 
-      <Button onClick={handleConvert} className="w-full h-11 rounded-xl font-bold gap-2">
-        Convert
+      <Button
+        onClick={handleConvert}
+        disabled={isConverting}
+        className="w-full h-11 rounded-xl font-bold gap-2 active:scale-95 transition-all cursor-pointer"
+      >
+        {isConverting ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Converting…</span>
+          </>
+        ) : (
+          "Convert"
+        )}
       </Button>
 
       {errorMsg && (
@@ -160,30 +192,55 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
       )}
 
       {result && (
-        <div className="p-4 rounded-2xl bg-muted/50 border border-border flex items-center justify-between gap-3">
-          <div
-            onClick={handleCopyResult}
-            className="cursor-pointer group flex-1"
-            title="Click or tap to copy answer at once"
-          >
-            <div className="text-xs text-muted-foreground">{amount} {fromUnit} =</div>
-            <div className="text-2xl font-extrabold font-mono text-primary break-all group-hover:opacity-90 transition">
-              {result} {toUnit}
+        <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div
+              onClick={handleCopyResult}
+              className="cursor-pointer group flex-1"
+              title="Click or tap to copy answer at once"
+            >
+              <div className="text-xs text-muted-foreground">{amount} {fromUnit} =</div>
+              <div className="text-2xl font-extrabold font-mono text-primary break-all group-hover:opacity-90 transition">
+                {result} {toUnit}
+              </div>
             </div>
+            <Button
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={handleCopyResult}
+              className={`h-9 px-3 text-xs gap-1.5 rounded-xl font-medium shrink-0 cursor-pointer transition ${
+                copied ? "border-emerald-500/50 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30" : ""
+              }`}
+              title="Copy answer at once"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? "Copied!" : "Copy"}</span>
+            </Button>
           </div>
-          <Button
-            size="sm"
-            type="button"
-            variant="outline"
-            onClick={handleCopyResult}
-            className={`h-9 px-3 text-xs gap-1.5 rounded-xl font-medium shrink-0 cursor-pointer transition ${
-              copied ? "border-emerald-500/50 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30" : ""
-            }`}
-            title="Copy answer at once"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? "Copied!" : "Copy"}</span>
-          </Button>
+
+          {/* Provider Badge and Educational Context */}
+          {aiResult?.providerUsed && (
+            <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span className="font-medium flex items-center gap-1 text-primary">
+                <Sparkles className="w-3 h-3" /> {aiResult.providerUsed}
+              </span>
+            </div>
+          )}
+
+          {aiResult?.unitDefinition && (
+            <div className="p-2.5 rounded-xl bg-card border border-border/60 text-xs text-muted-foreground leading-relaxed">
+              <span className="font-semibold text-foreground">Standard Definition: </span>
+              {aiResult.unitDefinition}
+            </div>
+          )}
+
+          {aiResult?.formulaNote && (
+            <div className="p-2 rounded-xl bg-primary/5 text-xs text-foreground/80 font-sans">
+              <span className="font-semibold text-primary">Conversion Note: </span>
+              {aiResult.formulaNote}
+            </div>
+          )}
         </div>
       )}
     </Card>
