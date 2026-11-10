@@ -37,6 +37,7 @@ import {
   WifiOff,
   Clock,
   ShieldAlert,
+  Lock,
 } from "lucide-react";
 
 type TabKey = "calc" | "graph" | "equations" | "converter";
@@ -69,13 +70,6 @@ const Index = () => {
   const isBlocked = isAppPermanentlyBlocked(isPro);
   const withinTrial = isWithinTrialPeriod();
 
-  // If user is permanently blocked after 1 day of usage without buying, force open upgrade paywall
-  useEffect(() => {
-    if (isBlocked && !isPro) {
-      setUpgradeOpen(true);
-    }
-  }, [isBlocked, isPro]);
-
   // Periodic trial status tick (every 20s)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -98,12 +92,18 @@ const Index = () => {
   }, [dark]);
 
   const handleTabChange = (tab: TabKey) => {
-    if (isBlocked && !isPro) {
-      setUpgradeOpen(true);
-      return;
-    }
     setActiveTab(tab);
     setSearchParams({ tab });
+    // After 3 days free offer has exhausted, prompt upgrade when accessing Graphing, Equation Solver, or Converter
+    if (tab !== "calc" && isBlocked && !isPro) {
+      handleRequestUpgrade(
+        tab === "graph"
+          ? "2D Graphing Calculator"
+          : tab === "equations"
+          ? "Equation Solver"
+          : "Unit & Currency Converter"
+      );
+    }
   };
 
   const handleRequestUpgrade = (featureName: string) => {
@@ -111,11 +111,11 @@ const Index = () => {
     setUpgradeOpen(true);
   };
 
-  const tabs: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
+  const tabs: Array<{ key: TabKey; label: string; icon: React.ReactNode; isPremiumTool?: boolean }> = [
     { key: "calc", label: "Calculator", icon: <CalcIcon className="w-4 h-4" /> },
-    { key: "graph", label: "Graphing", icon: <LineChart className="w-4 h-4" /> },
-    { key: "equations", label: "Solver", icon: <SquareRadical className="w-4 h-4" /> },
-    { key: "converter", label: "Converter", icon: <ArrowRightLeft className="w-4 h-4" /> },
+    { key: "graph", label: "Graphing", icon: <LineChart className="w-4 h-4" />, isPremiumTool: true },
+    { key: "equations", label: "Solver", icon: <SquareRadical className="w-4 h-4" />, isPremiumTool: true },
+    { key: "converter", label: "Converter", icon: <ArrowRightLeft className="w-4 h-4" />, isPremiumTool: true },
   ];
 
   return (
@@ -179,7 +179,7 @@ const Index = () => {
                   key={tab.key}
                   type="button"
                   onClick={() => handleTabChange(tab.key)}
-                  className={`py-2 px-1 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
+                  className={`py-2 px-1 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition ${
                     isActive
                       ? "bg-card text-foreground shadow-xs font-bold"
                       : "text-muted-foreground hover:text-foreground"
@@ -187,6 +187,9 @@ const Index = () => {
                 >
                   {tab.icon}
                   <span className="truncate">{tab.label}</span>
+                  {tab.isPremiumTool && isBlocked && !isPro && (
+                    <Lock className="w-2.5 h-2.5 opacity-70 text-amber-500 shrink-0" />
+                  )}
                 </button>
               );
             })}

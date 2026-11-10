@@ -113,26 +113,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   };
 
   const handleOpenChangeInternal = (newOpen: boolean) => {
-    // If user is permanently blocked after 1 day and hasn't bought, prevent closing
-    if (isBlocked && !isPro && !newOpen) {
-      return;
-    }
     onOpenChange(newOpen);
   };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChangeInternal}>
-      <DialogContent
-        className={`max-w-md rounded-3xl p-6 bg-card border border-border shadow-2xl ${
-          isBlocked && !isPro ? "[&>button]:hidden" : ""
-        }`}
-        onPointerDownOutside={(e) => {
-          if (isBlocked && !isPro) e.preventDefault();
-        }}
-        onEscapeKeyDown={(e) => {
-          if (isBlocked && !isPro) e.preventDefault();
-        }}
-      >
+      <DialogContent className="max-w-md rounded-3xl p-6 bg-card border border-border shadow-2xl">
         <DialogHeader className="text-center space-y-2">
           <div
             className={`mx-auto w-12 h-12 rounded-2xl flex items-center justify-center ${
@@ -149,15 +135,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
           <DialogTitle className="text-xl font-bold text-foreground">
             {isBlocked && !isPro
-              ? "Your 1-Day Free Trial Has Ended"
+              ? "3-Day Free Offer Has Ended"
               : "Get Unlimited Lifetime Access"}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             {isBlocked && !isPro
-              ? "You have completed 1 full day of free trial. Unlock Lifetime Premium for $19.99 to continue using Nume Pro."
+              ? "Your 3-day free offer for Graphing, Equation Solver, and Converter has ended. Unlock Lifetime Access ($19.99) to use all advanced tools, or continue using the scientific calculator freely."
               : featureTrigger
               ? `Unlock ${featureTrigger} and all advanced tools forever.`
-              : "Pay once for $19.99 and get unrestricted lifetime access to all features."}
+              : "Pay once for $19.99 and get unrestricted lifetime access to Graphing, Equation Solver, and Converter."}
           </DialogDescription>
         </DialogHeader>
 

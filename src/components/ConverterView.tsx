@@ -7,10 +7,12 @@ import { UNIT_OPTIONS, CURRENCY_OPTIONS, UnitCategory, convertMeasurement } from
 import { crossRate, fetchLiveRates, readCachedRates, RateTable } from "@/lib/currencies";
 import { useNetworkMode } from "@/lib/networkMode";
 import { formatWithCommas } from "@/lib/formatNumber";
-import { ArrowRightLeft, AlertCircle, Wifi, WifiOff, Copy, Check, Sparkles, Loader2 } from "lucide-react";
+import { ArrowRightLeft, AlertCircle, Wifi, WifiOff, Copy, Check, Sparkles, Loader2, Lock } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
 import { convertWithAiFallback, ConversionAiResult } from "@/lib/aiFallbackSystem";
+import { canAccessPremiumFeature } from "@/lib/freemium";
+import { PremiumLock } from "@/components/PremiumLock";
 
 interface ConverterViewProps {
   isPro: boolean;
@@ -34,7 +36,7 @@ const DEFAULTS: Record<UnitCategory, [string, string]> = {
 const optionsFor = (c: UnitCategory): Record<string, string> =>
   c === "currency" ? CURRENCY_OPTIONS : (UNIT_OPTIONS[c] as Record<string, string>);
 
-export const ConverterView: React.FC<ConverterViewProps> = () => {
+export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUpgrade }) => {
   const [category, setCategory] = useState<UnitCategory>("currency");
   const [amount, setAmount] = useState("100");
   const [fromUnit, setFromUnit] = useState("USD");
@@ -46,6 +48,8 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
   const [copied, setCopied] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const { online } = useNetworkMode();
+
+  const isLocked = !canAccessPremiumFeature("converter", isPro);
 
   const handleCopyResult = async () => {
     if (!result) return;
@@ -83,6 +87,10 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
   };
 
   const handleConvert = async () => {
+    if (isLocked) {
+      onRequestUpgrade("Unit & Currency Converter");
+      return;
+    }
     const num = parseFloat(amount.replace(/,/g, ""));
     if (isNaN(num)) return setErrorMsg("Please enter a valid number.");
     setIsConverting(true);
@@ -127,6 +135,7 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
             variant="ghost"
             key={c.key}
             type="button"
+            disabled={isLocked}
             onClick={() => pickCategory(c.key)}
             className={`py-1.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 ${
               category === c.key ? "bg-card text-foreground shadow-xs font-bold" : "text-muted-foreground"
@@ -138,7 +147,7 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
       </div>
 
       <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>Unlimited Free Converter</span>
+        <span>{isLocked ? "PRO Tool (Trial ended)" : "Unit & Currency Converter"}</span>
         {category === "currency" && (
           <span className="flex items-center gap-1">
             {online ? <Wifi className="w-3 h-3 text-emerald-500" /> : <WifiOff className="w-3 h-3 text-muted-foreground" />} {rateNote}
@@ -148,18 +157,20 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
 
       <Input
         value={amount}
+        disabled={isLocked}
         inputMode="decimal"
         onChange={(e) => setAmount(e.target.value)}
-        className="h-11 rounded-xl font-mono"
+        className="h-11 rounded-xl font-mono disabled:opacity-60"
         aria-label="Amount"
       />
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} />
+        <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} disabled={isLocked} />
         <Button
           variant="ghost"
           size="icon"
           aria-label="Swap units"
+          disabled={isLocked}
           onClick={() => {
             setFromUnit(toUnit);
             setToUnit(fromUnit);
@@ -167,7 +178,7 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
         >
           <ArrowRightLeft className="w-4 h-4" />
         </Button>
-        <UnitSelect value={toUnit} onChange={setToUnit} options={options} />
+        <UnitSelect value={toUnit} onChange={setToUnit} options={options} disabled={isLocked} />
       </div>
 
       <Button
@@ -179,6 +190,11 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
           <>
             <Loader2 className="w-4 h-4 animate-spin" />
             <span>Converting…</span>
+          </>
+        ) : isLocked ? (
+          <>
+            <Lock className="w-4 h-4" />
+            <span>Unlock Pro to Convert ($19.99)</span>
           </>
         ) : (
           "Convert"
@@ -241,6 +257,22 @@ export const ConverterView: React.FC<ConverterViewProps> = () => {
               {aiResult.formulaNote}
             </div>
           )}
+        </div>
+      )}
+
+      {isLocked && (
+        <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <PremiumLock />
+            <span>Converter requires Lifetime Pro.</span>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => onRequestUpgrade("Unit & Currency Converter")}
+            className="h-8 text-xs rounded-xl font-bold"
+          >
+            Unlock Pro ($19.99)
+          </Button>
         </div>
       )}
     </Card>

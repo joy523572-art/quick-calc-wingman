@@ -1,26 +1,33 @@
 import { isWithinTrialPeriod } from "./trialManager";
 
 /**
- * Currency, Weight, Unit, Temperature, and History are permanently UNLOCKED for all users!
- * 2D Graphing and Equation Solver use Lifetime Premium or 1-day free trial.
+ * Calculator and History are permanently UNLOCKED for all users!
+ * 2D Graphing, Equation Solver, and Converter require Lifetime PRO after the 3-day free offer has exhausted.
  */
 export const UNLOCKED_FREE_FEATURES = [
-  "currency", "weight", "temperature", "length", "history", "history_pdf",
+  "calculator",
+  "history",
+  "history_pdf",
 ] as const;
 
 export const PREMIUM_FEATURES = [
-  "graph", "equation", "equation_camera", "equation_pdf",
+  "graph",
+  "equation",
+  "equation_camera",
+  "equation_pdf",
+  "converter",
+  "currency",
+  "weight",
+  "temperature",
+  "length",
 ] as const;
 
 export type PremiumFeature = typeof PREMIUM_FEATURES[number] | typeof UNLOCKED_FREE_FEATURES[number];
 
-export const canAccessPremiumFeature = (feature: PremiumFeature, isPro: boolean) => {
-  // Currency, Weight, Temp, Unit, History are permanently unlocked for everyone!
+export const canAccessPremiumFeature = (feature: PremiumFeature, isPro: boolean): boolean => {
+  // Scientific Calculator and calculation history are permanently unlocked for everyone!
   if (
-    feature === "currency" ||
-    feature === "weight" ||
-    feature === "temperature" ||
-    feature === "length" ||
+    feature === "calculator" ||
     feature === "history" ||
     feature === "history_pdf"
   ) {
@@ -33,3 +40,4 @@ export const canAccessPremiumFeature = (feature: PremiumFeature, isPro: boolean)
 };
 
 export const canSaveHistory = (_isPro: boolean) => true; // Permanently unlocked for everyone!
+
