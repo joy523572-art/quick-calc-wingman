@@ -136,9 +136,16 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
       </div>
 
       {/* Plot Canvas */}
-      <div className="w-full h-64 bg-muted/30 rounded-2xl border border-border p-2 pt-4">
+      <div
+        onClick={() => isLocked && onRequestUpgrade("2D Graphing Calculator")}
+        className={`w-full h-64 bg-muted/30 rounded-2xl border border-border p-2 pt-4 ${
+          isLocked ? "cursor-pointer hover:border-amber-500/50 transition" : ""
+        }`}
+      >
         {isLocked ? (
-          <div className="w-full h-full flex items-center justify-center"><PremiumLock label="Premium graphing" /></div>
+          <div className="w-full h-full flex items-center justify-center">
+            <PremiumLock label="Click to Unlock 2D Graphing" />
+          </div>
         ) : data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data}>
