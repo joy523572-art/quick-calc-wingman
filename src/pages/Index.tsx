@@ -9,10 +9,10 @@ import { usePlayBilling } from "@/hooks/usePlayBilling";
 import { requestInAppReview } from "@/lib/inAppReview";
 import { useNetworkMode } from "@/lib/networkMode";
 import {
-  getFirstOpenTimestamp,
-  isWithinTrialPeriod,
+  hasFeatureFreeTrials,
+  resetAllFeatureTrials,
+  exhaustAllFeatureTrials,
   isAppPermanentlyBlocked,
-  formatTrialTimeRemaining,
 } from "@/lib/trialManager";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +35,6 @@ import {
   Star,
   Wifi,
   WifiOff,
-  Clock,
   ShieldAlert,
   Lock,
 } from "lucide-react";
@@ -57,26 +56,19 @@ const Index = () => {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [featureTrigger, setFeatureTrigger] = useState<string>("");
   const [dark, setDark] = useState(false);
-  const [, setTimerTick] = useState(0);
+  const [, setTrialTick] = useState(0);
 
   const { isPro, purchasePlan, checkSubscription } = usePlayBilling();
   const network = useNetworkMode();
 
-  // Initialize first open timestamp on mount & monitor trial expiration
+  // Listen for feature trial use events to re-render tab lock badges live
   useEffect(() => {
-    getFirstOpenTimestamp();
+    const handleTrialUsed = () => setTrialTick((t) => t + 1);
+    window.addEventListener("nume:feature-trial-used", handleTrialUsed);
+    return () => window.removeEventListener("nume:feature-trial-used", handleTrialUsed);
   }, []);
 
   const isBlocked = isAppPermanentlyBlocked(isPro);
-  const withinTrial = isWithinTrialPeriod();
-
-  // Periodic trial status tick (every 20s)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTimerTick((t) => t + 1);
-    }, 20000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Dark/Light theme setup
   useEffect(() => {
@@ -94,8 +86,8 @@ const Index = () => {
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
     setSearchParams({ tab });
-    // Block on the 3rd day: prompt upgrade when accessing Graphing, Equation Solver, or Converter
-    if (tab !== "calc" && isBlocked && !isPro) {
+    // Check if clicked feature has exhausted its 2 free trial uses
+    if (tab !== "calc" && !hasFeatureFreeTrials(tab, isPro) && !isPro) {
       handleRequestUpgrade(
         tab === "graph"
           ? "2D Graphing Calculator"
@@ -106,9 +98,9 @@ const Index = () => {
     }
   };
 
-  // If user opens app directly on a premium tab while blocked, show paywall immediately
+  // If user opens app directly on an exhausted premium tab, prompt upgrade modal
   useEffect(() => {
-    if (activeTab !== "calc" && isBlocked && !isPro) {
+    if (activeTab !== "calc" && !hasFeatureFreeTrials(activeTab, isPro) && !isPro) {
       handleRequestUpgrade(
         activeTab === "graph"
           ? "2D Graphing Calculator"
@@ -117,7 +109,7 @@ const Index = () => {
           : "Unit & Currency Converter"
       );
     }
-  }, [activeTab, isBlocked, isPro]);
+  }, [activeTab, isPro]);
 
   const handleRequestUpgrade = (featureName: string) => {
     setFeatureTrigger(featureName);
@@ -200,7 +192,7 @@ const Index = () => {
                 >
                   {tab.icon}
                   <span className="truncate">{tab.label}</span>
-                  {tab.isPremiumTool && isBlocked && !isPro && (
+                  {tab.isPremiumTool && !hasFeatureFreeTrials(tab.key, isPro) && !isPro && (
                     <Lock className="w-2.5 h-2.5 opacity-70 text-amber-500 shrink-0" />
                   )}
                 </button>
@@ -351,7 +343,7 @@ const DataSafety = () => (
     </ul>
     <h3 className="font-semibold text-sm mt-3">Trial Testing & Reset</h3>
     <p className="text-muted-foreground">
-      Fast-forward this device/browser to Day 3 to test the paywall lock, or reset to Day 1:
+      Exhaust all 2 free trial uses to test the paywall lock, or reset trials back to 2 free uses per feature:
     </p>
     <div className="flex flex-wrap gap-2 mt-2">
       <Button
@@ -359,10 +351,7 @@ const DataSafety = () => (
         size="sm"
         className="text-xs rounded-xl border-amber-500/50 text-amber-600 dark:text-amber-400 font-bold hover:bg-amber-500/10 cursor-pointer"
         onClick={() => {
-          const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
-          localStorage.setItem('first_open_date', threeDaysAgo.toString());
-          localStorage.setItem('activeDays', JSON.stringify(["Day 1", "Day 2", "Day 3"]));
-          localStorage.setItem('force_trial_lock', 'true');
+          exhaustAllFeatureTrials();
           localStorage.removeItem('lifetime_purchased');
           localStorage.removeItem('billing_status');
           localStorage.removeItem('billing_plan_id');
@@ -370,16 +359,14 @@ const DataSafety = () => (
           window.location.reload();
         }}
       >
-        Fast-Forward to Day 3 (Lock Features)
+        Exhaust 2 Free Trial Uses (Lock Features)
       </Button>
       <Button
         variant="outline"
         size="sm"
         className="text-xs rounded-xl cursor-pointer"
         onClick={() => {
-          localStorage.setItem('first_open_date', Date.now().toString());
-          localStorage.setItem('activeDays', JSON.stringify([new Date().toDateString()]));
-          localStorage.removeItem('force_trial_lock');
+          resetAllFeatureTrials();
           localStorage.removeItem('lifetime_purchased');
           localStorage.removeItem('billing_status');
           localStorage.removeItem('billing_plan_id');
@@ -387,7 +374,7 @@ const DataSafety = () => (
           window.location.reload();
         }}
       >
-        Reset to Day 1 (Fresh User)
+        Reset Free Trials (2 Uses per Feature)
       </Button>
     </div>
 

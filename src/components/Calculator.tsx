@@ -12,6 +12,7 @@ import {
 import { noteSuccessfulCalculation } from "@/lib/inAppReview";
 import { downloadHistoryPdf } from "@/lib/historyExport";
 import { canSaveHistory, canAccessPremiumFeature } from "@/lib/freemium";
+import { consumeFeatureTrial } from "@/lib/trialManager";
 import { PremiumLock } from "@/components/PremiumLock";
 import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
@@ -111,8 +112,11 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
         return;
       }
 
-      // History saving is premium-only; calculating stays unlimited for everyone.
+      // History saving is premium-only (2 free trial uses); calculating stays unlimited for everyone.
       if (canSaveHistory(isPro)) {
+        if (!isPro) {
+          consumeFeatureTrial("history");
+        }
         setHistory((h) => [{ expr, result: formatted }, ...h].slice(0, 50));
       }
 

@@ -1,8 +1,9 @@
-import { isWithinTrialPeriod } from "./trialManager";
+import { hasFeatureFreeTrials } from "./trialManager";
 
 /**
- * Calculator calculation engine is permanently UNLOCKED for all users!
- * Calculation History, PDF Export, 2D Graphing, Equation Solver, and Converter require Lifetime PRO after the trial period.
+ * Scientific Calculator calculation engine is permanently 100% FREE & UNLIMITED for all users!
+ * Calculation History, PDF Export, 2D Graphing, Equation Solver, and Converter each grant
+ * 2 Lifetime Free Trials before requiring Lifetime PRO ($19.99).
  */
 export const UNLOCKED_FREE_FEATURES = [
   "calculator",
@@ -25,14 +26,12 @@ export const PREMIUM_FEATURES = [
 export type PremiumFeature = typeof PREMIUM_FEATURES[number] | typeof UNLOCKED_FREE_FEATURES[number];
 
 export const canAccessPremiumFeature = (feature: PremiumFeature, isPro: boolean): boolean => {
-  // Scientific Calculator computation is permanently unlocked for everyone!
+  // Scientific Calculator computation is permanently unlocked and unlimited for everyone!
   if (feature === "calculator") {
     return true;
   }
 
-  if (isPro) return true;
-  if (isWithinTrialPeriod()) return true;
-  return false;
+  return hasFeatureFreeTrials(feature, isPro);
 };
 
 export const canSaveHistory = (isPro: boolean): boolean => canAccessPremiumFeature("history", isPro);

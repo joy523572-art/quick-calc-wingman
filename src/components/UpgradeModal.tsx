@@ -132,15 +132,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
           <DialogTitle className="text-xl font-bold text-foreground">
             {isBlocked && !isPro
-              ? "3-Day Free Offer Has Ended"
+              ? "Free Trial Uses Reached"
+              : featureTrigger
+              ? `Unlock ${featureTrigger}`
               : "Get Unlimited Lifetime Access"}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             {isBlocked && !isPro
-              ? "Your 3-day free offer for Graphing, Equation Solver, and Converter has ended. Unlock Lifetime Access ($19.99) to use all advanced tools, or continue using the scientific calculator freely."
+              ? "You have used your 2 lifetime free trials for this advanced feature. Unlock Lifetime Access ($19.99) to use all advanced tools without limits, or continue using the scientific calculator freely."
               : featureTrigger
-              ? `Unlock ${featureTrigger} and all advanced tools forever.`
-              : "Pay once for $19.99 and get unrestricted lifetime access to Graphing, Equation Solver, and Converter."}
+              ? `Your 2 free trial uses for ${featureTrigger} are complete. Unlock Lifetime Access ($19.99) to keep using all features forever.`
+              : "Pay once for $19.99 and get unrestricted lifetime access to 2D Graphing, Equation Solver, Converter, and Calculation History."}
           </DialogDescription>
         </DialogHeader>
 

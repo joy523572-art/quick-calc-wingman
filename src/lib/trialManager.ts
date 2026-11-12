@@ -1,106 +1,126 @@
 /**
- * Records active day on app start and checks trial expiration.
- * Users get free access for 2 initial days; on the 3rd day, advanced features
- * require a one-time Lifetime subscription. The scientific calculator remains permanently free.
+ * Manages 2 Lifetime Free Trial uses per premium feature.
+ * Scientific Calculator is permanently 100% FREE & UNLIMITED for all users.
+ * Advanced tools (2D Graphing, Step-by-Step Solver, Unit Converter, Calculation History)
+ * each grant 2 lifetime free trial uses before requiring Lifetime PRO ($19.99).
  */
-export function recordActiveDay(): void {
-  if (typeof window === "undefined") return;
 
+export const MAX_FEATURE_FREE_TRIALS = 2;
+const FEATURE_TRIAL_PREFIX = "nume.feature_trials.";
+
+export type FeatureKey = "calculator" | "graph" | "equation" | "converter" | "history" | "history_pdf";
+
+export function getFeatureTrialCount(featureKey: string): number {
+  if (typeof window === "undefined") return 0;
   try {
-    const today = new Date().toDateString();
-    let activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
-    if (!Array.isArray(activeDays)) activeDays = [];
-
-    if (!activeDays.includes(today)) {
-      activeDays.push(today);
-      localStorage.setItem('activeDays', JSON.stringify(activeDays));
-    }
-
-    if (!localStorage.getItem('first_open_date')) {
-      localStorage.setItem('first_open_date', Date.now().toString());
-    }
+    const raw = localStorage.getItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`);
+    if (!raw) return 0;
+    const parsed = parseInt(raw, 10);
+    return isNaN(parsed) ? 0 : Math.max(0, parsed);
   } catch {
-    // ignore
+    return 0;
   }
 }
 
-export function saveFirstOpenTimestamp(ts: number): void {
-  if (typeof window === "undefined") return;
+export function consumeFeatureTrial(featureKey: string): number {
+  if (typeof window === "undefined") return 0;
   try {
-    localStorage.setItem('first_open_date', ts.toString());
+    const current = getFeatureTrialCount(featureKey);
+    const updated = current + 1;
+    localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`, updated.toString());
+    // Dispatch custom event for real-time UI updates
+    window.dispatchEvent(new Event("nume:feature-trial-used"));
+    return updated;
   } catch {
-    // ignore
+    return 0;
   }
 }
 
-export function isAppPermanentlyBlocked(isPro: boolean): boolean {
-  if (isPro) return false;
+export function hasFeatureFreeTrials(featureKey: string, isPro: boolean): boolean {
+  if (isPro) return true;
+  if (featureKey === "calculator") return true;
 
   try {
-    if (typeof window === "undefined") return false;
+    if (typeof window === "undefined") return true;
 
-    // Check URL search parameters for instant lock testing on any domain
+    // Check URL override for instant testing (?lock=1 or ?trial=expired)
     const params = new URLSearchParams(window.location.search);
-    const urlLock =
+    if (
       params.get("trial") === "expired" ||
-      params.get("day") === "3" ||
       params.get("lock") === "true" ||
-      params.get("lock") === "1";
-    if (urlLock) return true;
-
-    // Check forced lock flag in localStorage
-    if (localStorage.getItem('force_trial_lock') === 'true') return true;
+      params.get("lock") === "1"
+    ) {
+      return false;
+    }
 
     const isLifetime =
       localStorage.getItem('lifetime_purchased') === 'true' ||
       localStorage.getItem('billing_status') === 'active' ||
       localStorage.getItem('billing_plan_id') === 'lifetime_premium';
-    if (isLifetime) return false;
+    if (isLifetime) return true;
 
-    const activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
-    const firstOpen = parseInt(localStorage.getItem('first_open_date') || '0', 10);
-    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000; // 48 hours = arrived at the 3rd day
+    if (localStorage.getItem('force_trial_lock') === 'true') return false;
 
-    if (Array.isArray(activeDays) && activeDays.length >= 3) {
-      // block on 3rd day
-      return true;
-    } else if (firstOpen > 0 && Date.now() - firstOpen >= TWO_DAYS_MS) {
-      // block on 3rd calendar day (48+ hours elapsed)
-      return true;
-    } else {
-      // allow free trial for first 2 days
-      return false;
-    }
+    const used = getFeatureTrialCount(featureKey);
+    return used < MAX_FEATURE_FREE_TRIALS;
   } catch {
-    return false;
+    return true;
   }
+}
+
+export function getFeatureRemainingTrials(featureKey: string, isPro: boolean): number {
+  if (isPro || featureKey === "calculator") return Infinity;
+  if (!hasFeatureFreeTrials(featureKey, isPro)) return 0;
+  const used = getFeatureTrialCount(featureKey);
+  return Math.max(0, MAX_FEATURE_FREE_TRIALS - used);
+}
+
+export function isAppPermanentlyBlocked(isPro: boolean): boolean {
+  if (isPro) return false;
+  // Blocked if all primary premium tools have used up their 2 free trials
+  const graphExhausted = !hasFeatureFreeTrials("graph", false);
+  const eqExhausted = !hasFeatureFreeTrials("equation", false);
+  const convExhausted = !hasFeatureFreeTrials("converter", false);
+  return graphExhausted && eqExhausted && convExhausted;
 }
 
 export function isWithinTrialPeriod(): boolean {
   return !isAppPermanentlyBlocked(false);
 }
 
-export function getFirstOpenTimestamp(): number {
-  recordActiveDay();
-  const raw = localStorage.getItem('first_open_date');
-  if (raw) {
-    const p = parseInt(raw, 10);
-    if (!isNaN(p) && p > 0) return p;
-  }
-  return Date.now();
+export function formatTrialTimeRemaining(featureKey: string = "graph"): string {
+  const remaining = getFeatureRemainingTrials(featureKey, false);
+  if (remaining === 0 || remaining === Infinity) return "Trial Used (2/2)";
+  return `${remaining} Free Trial ${remaining === 1 ? "Use" : "Uses"} Left`;
 }
 
-export function formatTrialTimeRemaining(): string {
+export function resetAllFeatureTrials(): void {
+  if (typeof window === "undefined") return;
   try {
-    if (isAppPermanentlyBlocked(false)) {
-      return "Trial Ended (Day 3 reached - Lifetime Required)";
-    }
-    const activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
-    const count = Array.isArray(activeDays) ? activeDays.length : 1;
-    const remaining = Math.max(0, 3 - count);
-    if (remaining <= 0) return "Trial Ended (Day 3 reached - Lifetime Required)";
-    return `Trial Day ${count}/2 (${remaining} day left)`;
+    localStorage.removeItem("force_trial_lock");
+    ["graph", "equation", "converter", "history", "history_pdf", "equation_camera"].forEach((k) => {
+      localStorage.removeItem(`${FEATURE_TRIAL_PREFIX}${k}`);
+    });
+    window.dispatchEvent(new Event("nume:feature-trial-used"));
   } catch {
-    return "Free Trial";
+    // ignore
   }
 }
+
+export function exhaustAllFeatureTrials(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("force_trial_lock", "true");
+    ["graph", "equation", "converter", "history", "history_pdf", "equation_camera"].forEach((k) => {
+      localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${k}`, MAX_FEATURE_FREE_TRIALS.toString());
+    });
+    window.dispatchEvent(new Event("nume:feature-trial-used"));
+  } catch {
+    // ignore
+  }
+}
+
+// Deprecated active day helpers preserved for clean imports
+export function recordActiveDay(): void {}
+export function saveFirstOpenTimestamp(_ts: number): void {}
+export function getFirstOpenTimestamp(): number { return Date.now(); }

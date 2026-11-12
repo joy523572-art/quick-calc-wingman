@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { canAccessPremiumFeature } from "@/lib/freemium";
+import { consumeFeatureTrial, formatTrialTimeRemaining } from "@/lib/trialManager";
 import { PremiumLock } from "@/components/PremiumLock";
 import { Lock, AlertCircle } from "lucide-react";
 
@@ -33,8 +34,11 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
 
   const handlePlot = (fn = expr) => {
     if (isLocked) {
-      onRequestUpgrade("Graphing Calculator");
+      onRequestUpgrade("2D Graphing Calculator");
       return;
+    }
+    if (!isPro) {
+      consumeFeatureTrial("graph");
     }
     setErrorMsg(null);
     setExpr(fn);
@@ -80,8 +84,8 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
 <PremiumLock />
           )}
         </div>
-        <div className="text-[11px] text-muted-foreground">
-          {isPro ? "Unlimited Pro Mode" : "Premium required"}
+        <div className="text-[11px] font-semibold text-muted-foreground">
+          {isPro ? "Unlimited Pro Mode" : formatTrialTimeRemaining("graph")}
         </div>
       </div>
 

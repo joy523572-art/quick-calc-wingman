@@ -12,6 +12,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
 import { convertWithAiFallback, ConversionAiResult } from "@/lib/aiFallbackSystem";
 import { canAccessPremiumFeature } from "@/lib/freemium";
+import { consumeFeatureTrial, formatTrialTimeRemaining } from "@/lib/trialManager";
 import { PremiumLock } from "@/components/PremiumLock";
 
 interface ConverterViewProps {
@@ -93,6 +94,10 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
     }
     const num = parseFloat(amount.replace(/,/g, ""));
     if (isNaN(num)) return setErrorMsg("Please enter a valid number.");
+
+    if (!isPro) {
+      consumeFeatureTrial("converter");
+    }
     setIsConverting(true);
     try {
       const rate = category === "currency" ? crossRate(rates, fromUnit, toUnit) : undefined;
@@ -146,8 +151,8 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         ))}
       </div>
 
-      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>{isLocked ? "PRO Tool (Trial ended)" : "Unit & Currency Converter"}</span>
+      <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+        <span>{isPro ? "Unlimited Pro Mode" : formatTrialTimeRemaining("converter")}</span>
         {category === "currency" && (
           <span className="flex items-center gap-1">
             {online ? <Wifi className="w-3 h-3 text-emerald-500" /> : <WifiOff className="w-3 h-3 text-muted-foreground" />} {rateNote}

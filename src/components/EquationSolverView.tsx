@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { solveEquation } from "@/lib/equationSolver";
 import { solveEquationWithAiFallback, EquationAiResult } from "@/lib/aiFallbackSystem";
 import { canAccessPremiumFeature } from "@/lib/freemium";
+import { consumeFeatureTrial, formatTrialTimeRemaining } from "@/lib/trialManager";
 import { downloadTextPdf } from "@/lib/historyExport";
 import { PremiumLock } from "@/components/PremiumLock";
 import { Lock, AlertCircle, CheckCircle2, FileDown, Loader2, Calculator, Copy, Check, Sparkles } from "lucide-react";
@@ -35,6 +36,10 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
       setErrorMsg("Please enter an equation");
       setSolution(null);
       return;
+    }
+
+    if (!isPro) {
+      consumeFeatureTrial("equation");
     }
 
     setIsSolving(true);
@@ -112,9 +117,9 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
             <Calculator className="w-3.5 h-3.5 text-primary" />
             <span>Enter algebraic equation</span>
           </label>
-          {isPro && (
-            <span className="text-[11px] text-muted-foreground font-medium">Unlimited Pro</span>
-          )}
+          <span className="text-[11px] font-semibold text-muted-foreground">
+            {isPro ? "Unlimited Pro" : formatTrialTimeRemaining("equation")}
+          </span>
         </div>
 
         <div className="space-y-1.5">
