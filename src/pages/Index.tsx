@@ -349,14 +349,56 @@ const DataSafety = () => (
       <li><strong>Data shared:</strong> None. No data shared with third parties.</li>
       <li><strong>Security practices:</strong> All data stored strictly on device storage.</li>
     </ul>
-    <h3 className="font-semibold text-sm mt-3">Reset & Clear Local Data</h3>
+    <h3 className="font-semibold text-sm mt-3">Trial Testing & Reset</h3>
+    <p className="text-muted-foreground">
+      Fast-forward this device/browser to Day 3 to test the paywall lock, or reset to Day 1:
+    </p>
+    <div className="flex flex-wrap gap-2 mt-2">
+      <Button
+        variant="outline"
+        size="sm"
+        className="text-xs rounded-xl border-amber-500/50 text-amber-600 dark:text-amber-400 font-bold hover:bg-amber-500/10 cursor-pointer"
+        onClick={() => {
+          const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+          localStorage.setItem('first_open_date', threeDaysAgo.toString());
+          localStorage.setItem('activeDays', JSON.stringify(["Day 1", "Day 2", "Day 3"]));
+          localStorage.setItem('force_trial_lock', 'true');
+          localStorage.removeItem('lifetime_purchased');
+          localStorage.removeItem('billing_status');
+          localStorage.removeItem('billing_plan_id');
+          localStorage.removeItem('nume.web-subscription.v1');
+          window.location.reload();
+        }}
+      >
+        Fast-Forward to Day 3 (Lock Features)
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="text-xs rounded-xl cursor-pointer"
+        onClick={() => {
+          localStorage.setItem('first_open_date', Date.now().toString());
+          localStorage.setItem('activeDays', JSON.stringify([new Date().toDateString()]));
+          localStorage.removeItem('force_trial_lock');
+          localStorage.removeItem('lifetime_purchased');
+          localStorage.removeItem('billing_status');
+          localStorage.removeItem('billing_plan_id');
+          localStorage.removeItem('nume.web-subscription.v1');
+          window.location.reload();
+        }}
+      >
+        Reset to Day 1 (Fresh User)
+      </Button>
+    </div>
+
+    <h3 className="font-semibold text-sm mt-4">Reset & Clear Local Data</h3>
     <p className="text-muted-foreground">
       Tap below to permanently purge saved calculation history and cached preferences.
     </p>
     <Button
       variant="destructive"
       size="sm"
-      className="mt-2 text-xs rounded-xl"
+      className="mt-2 text-xs rounded-xl cursor-pointer"
       onClick={() => {
         localStorage.clear();
         sessionStorage.clear();

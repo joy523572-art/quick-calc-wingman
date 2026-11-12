@@ -39,18 +39,29 @@ export function isAppPermanentlyBlocked(isPro: boolean): boolean {
   try {
     if (typeof window === "undefined") return false;
 
-    const activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
+    // Check URL search parameters for instant lock testing on any domain
+    const params = new URLSearchParams(window.location.search);
+    const urlLock =
+      params.get("trial") === "expired" ||
+      params.get("day") === "3" ||
+      params.get("lock") === "true" ||
+      params.get("lock") === "1";
+    if (urlLock) return true;
+
+    // Check forced lock flag in localStorage
+    if (localStorage.getItem('force_trial_lock') === 'true') return true;
+
     const isLifetime =
       localStorage.getItem('lifetime_purchased') === 'true' ||
       localStorage.getItem('billing_status') === 'active' ||
       localStorage.getItem('billing_plan_id') === 'lifetime_premium';
+    if (isLifetime) return false;
+
+    const activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
     const firstOpen = parseInt(localStorage.getItem('first_open_date') || '0', 10);
     const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000; // 48 hours = arrived at the 3rd day
 
-    if (isLifetime) {
-      // allow app
-      return false;
-    } else if (Array.isArray(activeDays) && activeDays.length >= 3) {
+    if (Array.isArray(activeDays) && activeDays.length >= 3) {
       // block on 3rd day
       return true;
     } else if (firstOpen > 0 && Date.now() - firstOpen >= TWO_DAYS_MS) {
