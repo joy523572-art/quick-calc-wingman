@@ -59,10 +59,10 @@ describe("Google Play Lifetime Product & 1-Day Trial integration", () => {
     expect(localStorage.getItem("billing_plan_id")).toBeNull();
   });
 
-  it("allows free trial uses and blocks when 2 trial uses per feature are exhausted", () => {
+  it("allows free trial uses and blocks when feature trials are exhausted", () => {
     localStorage.setItem("nume.feature_trials.graph", "2");
     localStorage.setItem("nume.feature_trials.equation", "2");
-    localStorage.setItem("nume.feature_trials.converter", "2");
+    localStorage.setItem("nume.feature_trials.converter", "4");
 
     expect(isWithinTrialPeriod()).toBe(false);
     expect(isAppPermanentlyBlocked(false)).toBe(true);

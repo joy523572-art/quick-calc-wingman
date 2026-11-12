@@ -1,11 +1,18 @@
 /**
- * Manages 2 Lifetime Free Trial uses per premium feature.
+ * Manages Lifetime Free Trial uses per premium feature.
  * Scientific Calculator is permanently 100% FREE & UNLIMITED for all users.
- * Advanced tools (2D Graphing, Step-by-Step Solver, Unit Converter, Calculation History)
- * each grant 2 lifetime free trial uses before requiring Lifetime PRO ($19.99).
+ * Unit & Currency Converter receives 4 lifetime free trial uses (1 for each of its 4 categories).
+ * Other advanced tools (2D Graphing, Step-by-Step Solver, Calculation History) receive 2 lifetime free trial uses.
  */
 
-export const MAX_FEATURE_FREE_TRIALS = 2;
+export function getMaxFeatureTrials(featureKey: string): number {
+  if (featureKey === "converter") {
+    return 4;
+  }
+  return 2;
+}
+
+export const MAX_FEATURE_FREE_TRIALS = 2; // Default for non-converter features
 const FEATURE_TRIAL_PREFIX = "nume.feature_trials.";
 
 export type FeatureKey = "calculator" | "graph" | "equation" | "converter" | "history" | "history_pdf";
@@ -62,7 +69,8 @@ export function hasFeatureFreeTrials(featureKey: string, isPro: boolean): boolea
     if (localStorage.getItem('force_trial_lock') === 'true') return false;
 
     const used = getFeatureTrialCount(featureKey);
-    return used < MAX_FEATURE_FREE_TRIALS;
+    const maxTrials = getMaxFeatureTrials(featureKey);
+    return used < maxTrials;
   } catch {
     return true;
   }
@@ -72,12 +80,13 @@ export function getFeatureRemainingTrials(featureKey: string, isPro: boolean): n
   if (isPro || featureKey === "calculator") return Infinity;
   if (!hasFeatureFreeTrials(featureKey, isPro)) return 0;
   const used = getFeatureTrialCount(featureKey);
-  return Math.max(0, MAX_FEATURE_FREE_TRIALS - used);
+  const maxTrials = getMaxFeatureTrials(featureKey);
+  return Math.max(0, maxTrials - used);
 }
 
 export function isAppPermanentlyBlocked(isPro: boolean): boolean {
   if (isPro) return false;
-  // Blocked if all primary premium tools have used up their 2 free trials
+  // Blocked if all primary premium tools have used up their free trials
   const graphExhausted = !hasFeatureFreeTrials("graph", false);
   const eqExhausted = !hasFeatureFreeTrials("equation", false);
   const convExhausted = !hasFeatureFreeTrials("converter", false);
@@ -90,7 +99,8 @@ export function isWithinTrialPeriod(): boolean {
 
 export function formatTrialTimeRemaining(featureKey: string = "graph"): string {
   const remaining = getFeatureRemainingTrials(featureKey, false);
-  if (remaining === 0 || remaining === Infinity) return "Trial Used (2/2)";
+  const maxTrials = getMaxFeatureTrials(featureKey);
+  if (remaining === 0 || remaining === Infinity) return `Trial Used (${maxTrials}/${maxTrials})`;
   return `${remaining} Free Trial ${remaining === 1 ? "Use" : "Uses"} Left`;
 }
 
@@ -112,7 +122,7 @@ export function exhaustAllFeatureTrials(): void {
   try {
     localStorage.setItem("force_trial_lock", "true");
     ["graph", "equation", "converter", "history", "history_pdf", "equation_camera"].forEach((k) => {
-      localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${k}`, MAX_FEATURE_FREE_TRIALS.toString());
+      localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${k}`, getMaxFeatureTrials(k).toString());
     });
     window.dispatchEvent(new Event("nume:feature-trial-used"));
   } catch {
