@@ -1,5 +1,7 @@
 /**
- * Records active day on app start and checks trial expiration based on 3 distinct days or 7 calendar days max.
+ * Records active day on app start and checks trial expiration.
+ * Users get free access for 2 initial days; on the 3rd day, advanced features
+ * require a one-time Lifetime subscription. The scientific calculator remains permanently free.
  */
 export function recordActiveDay(): void {
   if (typeof window === "undefined") return;
@@ -43,21 +45,19 @@ export function isAppPermanentlyBlocked(isPro: boolean): boolean {
       localStorage.getItem('billing_status') === 'active' ||
       localStorage.getItem('billing_plan_id') === 'lifetime_premium';
     const firstOpen = parseInt(localStorage.getItem('first_open_date') || '0', 10);
-    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+    const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000; // 48 hours = arrived at the 3rd day
 
     if (isLifetime) {
       // allow app
       return false;
-    } else if (Array.isArray(activeDays) && activeDays.length > 3) {
-      // block - used 3 days
-      // show lifetime paywall for product lifetime_premium $19.99
+    } else if (Array.isArray(activeDays) && activeDays.length >= 3) {
+      // block on 3rd day
       return true;
-    } else if (firstOpen > 0 && Date.now() - firstOpen > SEVEN_DAYS) {
-      // block - 7 calendar days max
-      // show lifetime paywall
+    } else if (firstOpen > 0 && Date.now() - firstOpen >= TWO_DAYS_MS) {
+      // block on 3rd calendar day (48+ hours elapsed)
       return true;
     } else {
-      // allow free trial
+      // allow free trial for first 2 days
       return false;
     }
   } catch {
@@ -81,11 +81,14 @@ export function getFirstOpenTimestamp(): number {
 
 export function formatTrialTimeRemaining(): string {
   try {
+    if (isAppPermanentlyBlocked(false)) {
+      return "Trial Ended (Day 3 reached - Lifetime Required)";
+    }
     const activeDays = JSON.parse(localStorage.getItem('activeDays') || '[]');
     const count = Array.isArray(activeDays) ? activeDays.length : 1;
-    const remaining = Math.max(0, 4 - count);
-    if (remaining <= 0) return "Trial Ended (3 days used)";
-    return `Trial Day ${count}/3 (${remaining} day${remaining === 1 ? "" : "s"} left)`;
+    const remaining = Math.max(0, 3 - count);
+    if (remaining <= 0) return "Trial Ended (Day 3 reached - Lifetime Required)";
+    return `Trial Day ${count}/2 (${remaining} day left)`;
   } catch {
     return "Free Trial";
   }

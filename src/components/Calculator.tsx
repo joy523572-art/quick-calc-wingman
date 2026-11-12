@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { noteSuccessfulCalculation } from "@/lib/inAppReview";
 import { downloadHistoryPdf } from "@/lib/historyExport";
-import { canSaveHistory } from "@/lib/freemium";
+import { canSaveHistory, canAccessPremiumFeature } from "@/lib/freemium";
 import { PremiumLock } from "@/components/PremiumLock";
 import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
@@ -34,6 +34,9 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [copied, setCopied] = useState(false);
   const [copiedHistoryIndex, setCopiedHistoryIndex] = useState<number | null>(null);
+
+  const isHistoryLocked = !canAccessPremiumFeature("history", isPro);
+  const isPdfLocked = !canAccessPremiumFeature("history_pdf", isPro);
 
   const handleCopyCurrent = async () => {
     const val = result || expr;
@@ -122,6 +125,10 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
   }, [expr, isRad, isPro]);
 
   const handleExportPdf = () => {
+    if (isPdfLocked) {
+      onRequestUpgrade?.("PDF Calculation Report");
+      return;
+    }
     const records = history.map((h) => ({
       expr: h.expr,
       result: h.result,
@@ -200,79 +207,93 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs rounded-xl" aria-label="History">
-                <HistoryIcon className="h-3.5 w-3.5" />
-                <span>History</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-md">
-              <SheetHeader>
-                <SheetTitle className="flex items-center justify-between text-base">
-                  <span>Calculation History</span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleExportPdf}
-                      className="h-8 text-xs gap-1 rounded-lg"
-                      title="Export calculations as PDF"
-                    >
-                      <FileDown className="h-3.5 w-3.5" /> PDF
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setHistory([])}
-                      className="h-8 text-xs text-destructive hover:text-destructive"
-                      aria-label="Clear history"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear
-                    </Button>
-                  </div>
-                </SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 space-y-2 overflow-y-auto max-h-[80vh] pr-2">
-                {history.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    No calculations saved yet.
-                  </p>
-                )}
-                {history.map((h, i) => (
-                  <div
-                    key={i}
-                    onClick={() => setExpr(h.result)}
-                    className="w-full text-left p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/50 transition flex items-center justify-between gap-2 cursor-pointer group"
-                  >
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="text-xs font-mono text-muted-foreground truncate">
-                        {groupDigits(h.expr)}
-                      </div>
-                      <div className="text-base font-mono font-bold text-primary truncate">
-                        = {groupDigits(h.result)}
-                      </div>
+          {isHistoryLocked ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onRequestUpgrade?.("Calculation History")}
+              className="h-8 gap-1.5 text-xs rounded-xl hover:bg-muted active:scale-95 transition cursor-pointer"
+              aria-label="History (Requires Premium)"
+              title="Calculation history requires Lifetime Premium"
+            >
+              <Lock className="h-3.5 w-3.5 text-amber-500" />
+              <span>History</span>
+            </Button>
+          ) : (
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs rounded-xl" aria-label="History">
+                  <HistoryIcon className="h-3.5 w-3.5" />
+                  <span>History</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-full sm:max-w-md">
+                <SheetHeader>
+                  <SheetTitle className="flex items-center justify-between text-base">
+                    <span>Calculation History</span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportPdf}
+                        className="h-8 text-xs gap-1 rounded-lg"
+                        title="Export calculations as PDF"
+                      >
+                        <FileDown className="h-3.5 w-3.5" /> PDF
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setHistory([])}
+                        className="h-8 text-xs text-destructive hover:text-destructive"
+                        aria-label="Clear history"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      type="button"
-                      onClick={(e) => handleCopyHistory(h.result, i, e)}
-                      className="h-8 px-2.5 text-xs gap-1.5 text-muted-foreground hover:text-foreground shrink-0 rounded-lg cursor-pointer"
-                      title="Copy this answer"
+                  </SheetTitle>
+                </SheetHeader>
+                <div className="mt-4 space-y-2 overflow-y-auto max-h-[80vh] pr-2">
+                  {history.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No calculations saved yet.
+                    </p>
+                  )}
+                  {history.map((h, i) => (
+                    <div
+                      key={i}
+                      onClick={() => setExpr(h.result)}
+                      className="w-full text-left p-3 rounded-2xl bg-muted/50 hover:bg-muted border border-border/50 transition flex items-center justify-between gap-2 cursor-pointer group"
                     >
-                      {copiedHistoryIndex === i ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-500" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                      <span className="text-[11px] font-medium">{copiedHistoryIndex === i ? "Copied!" : "Copy"}</span>
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </SheetContent>
-          </Sheet>
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="text-xs font-mono text-muted-foreground truncate">
+                          {groupDigits(h.expr)}
+                        </div>
+                        <div className="text-base font-mono font-bold text-primary truncate">
+                          = {groupDigits(h.result)}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        onClick={(e) => handleCopyHistory(h.result, i, e)}
+                        className="h-8 px-2.5 text-xs gap-1.5 text-muted-foreground hover:text-foreground shrink-0 rounded-lg cursor-pointer"
+                        title="Copy this answer"
+                      >
+                        {copiedHistoryIndex === i ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                        <span className="text-[11px] font-medium">{copiedHistoryIndex === i ? "Copied!" : "Copy"}</span>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </SheetContent>
+            </Sheet>
+          )}
         </div>
       </div>
 

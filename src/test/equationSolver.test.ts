@@ -54,9 +54,11 @@ describe("equation solver", () => {
     expect(answer.roots).toEqual([-2]);
   });
 
-  it("handles multiline inputs cleanly", () => {
-    const answer = solveEquation("\n2x + 5 = 15\n\n");
-    expect(answer.roots).toEqual([5]);
+  it("solves the user requested handwritten example 5x + 10x = 50", () => {
+    const answer = solveEquation("5x + 10x = 50");
+    expect(answer.roots[0]).toBeCloseTo(3.333333333, 4);
+    expect(answer.summary).toContain("3.333333333");
   });
 });
+
 

@@ -1,16 +1,16 @@
 import { isWithinTrialPeriod } from "./trialManager";
 
 /**
- * Calculator and History are permanently UNLOCKED for all users!
- * 2D Graphing, Equation Solver, and Converter require Lifetime PRO after the 3-day free offer has exhausted.
+ * Calculator calculation engine is permanently UNLOCKED for all users!
+ * Calculation History, PDF Export, 2D Graphing, Equation Solver, and Converter require Lifetime PRO after the trial period.
  */
 export const UNLOCKED_FREE_FEATURES = [
   "calculator",
-  "history",
-  "history_pdf",
 ] as const;
 
 export const PREMIUM_FEATURES = [
+  "history",
+  "history_pdf",
   "graph",
   "equation",
   "equation_camera",
@@ -25,12 +25,8 @@ export const PREMIUM_FEATURES = [
 export type PremiumFeature = typeof PREMIUM_FEATURES[number] | typeof UNLOCKED_FREE_FEATURES[number];
 
 export const canAccessPremiumFeature = (feature: PremiumFeature, isPro: boolean): boolean => {
-  // Scientific Calculator and calculation history are permanently unlocked for everyone!
-  if (
-    feature === "calculator" ||
-    feature === "history" ||
-    feature === "history_pdf"
-  ) {
+  // Scientific Calculator computation is permanently unlocked for everyone!
+  if (feature === "calculator") {
     return true;
   }
 
@@ -39,5 +35,4 @@ export const canAccessPremiumFeature = (feature: PremiumFeature, isPro: boolean)
   return false;
 };
 
-export const canSaveHistory = (_isPro: boolean) => true; // Permanently unlocked for everyone!
-
+export const canSaveHistory = (isPro: boolean): boolean => canAccessPremiumFeature("history", isPro);

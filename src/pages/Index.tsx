@@ -94,7 +94,7 @@ const Index = () => {
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
     setSearchParams({ tab });
-    // After 3 days free offer has exhausted, prompt upgrade when accessing Graphing, Equation Solver, or Converter
+    // Block on the 3rd day: prompt upgrade when accessing Graphing, Equation Solver, or Converter
     if (tab !== "calc" && isBlocked && !isPro) {
       handleRequestUpgrade(
         tab === "graph"
@@ -105,6 +105,19 @@ const Index = () => {
       );
     }
   };
+
+  // If user opens app directly on a premium tab while blocked, show paywall immediately
+  useEffect(() => {
+    if (activeTab !== "calc" && isBlocked && !isPro) {
+      handleRequestUpgrade(
+        activeTab === "graph"
+          ? "2D Graphing Calculator"
+          : activeTab === "equations"
+          ? "Equation Solver"
+          : "Unit & Currency Converter"
+      );
+    }
+  }, [activeTab, isBlocked, isPro]);
 
   const handleRequestUpgrade = (featureName: string) => {
     setFeatureTrigger(featureName);

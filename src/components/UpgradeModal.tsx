@@ -32,7 +32,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   onRestore,
   onSubscriptionResult,
 }) => {
-  const [email, setEmail] = useState<string>("");
+  const [email, setEmail] = useState<string>("user@play.store");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -41,16 +41,13 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   const webRecord = getWebSubscriptionRecord();
 
   const handleBuy = async () => {
-    if (!isPlayBillingAvailable() && (!email || !email.includes("@"))) {
-      setErrorMsg("Please enter your email address to receive your purchase receipt.");
-      return;
-    }
+    const emailToUse = email && email.includes("@") ? email.trim() : "user@play.store";
 
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const ok = await onPurchase("lifetime_premium", "lifetime_premium", email);
+      const ok = await onPurchase("lifetime_premium", "lifetime_premium", emailToUse);
       if (ok) {
         const record = getWebSubscriptionRecord();
         if (record) {

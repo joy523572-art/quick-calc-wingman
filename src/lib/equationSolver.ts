@@ -75,9 +75,33 @@ function polynomialFromExpression(expression: string): Polynomial {
   return visit(node);
 }
 
+/**
+ * Sanitizes math input using a strict regex filter before it hits the math engine.
+ * Converts math superscripts and unicode operators, then strips dictionary words (e.g., 'SALE') and non-math noise.
+ */
+export function sanitizeMathInput(input: string): string {
+  if (!input) return "";
+  const preNormalized = input
+    .replace(/＝/g, "=")
+    .replace(/[⁰¹²³]/g, (digit) => `^${"⁰¹²³".indexOf(digit)}`)
+    .replace(/[−–—]/g, "-")
+    .replace(/[×·]/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/,/g, "")
+    .replace(/X/g, "x");
+
+  return preNormalized.replace(/[^0-9xXyYzZ+\-*/=.()^]/g, "");
+}
+
 export function solveEquation(input: string): EquationSolution {
+  // 1. Data Sanitization: Filter out non-math characters before string hits the math engine
+  const sanitizedInput = sanitizeMathInput(input);
+  if (!sanitizedInput || !/\d/.test(sanitizedInput)) {
+    throw new Error("Handwriting not detected clearly. Please rewrite.");
+  }
+
   // Extract line with equals or first non-empty line
-  const lines = input.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = sanitizedInput.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const raw = lines.find((l) => l.includes("=") || l.includes("＝")) || lines[0] || "";
 
   let normalized = raw
@@ -107,12 +131,18 @@ export function solveEquation(input: string): EquationSolution {
 
   const sides = normalized.split("=");
   if (sides.length !== 2 || !sides[0].trim() || !sides[1].trim()) {
-    throw new Error("Enter one equation with an equals sign, for example 2x+5=15.");
+    throw new Error("Handwriting not detected clearly. Please rewrite.");
   }
-  const left = polynomialFromExpression(sides[0]);
-  const right = polynomialFromExpression(sides[1]);
+  let left: Polynomial;
+  let right: Polynomial;
+  try {
+    left = polynomialFromExpression(sides[0]);
+    right = polynomialFromExpression(sides[1]);
+  } catch {
+    throw new Error("Handwriting not detected clearly. Please rewrite.");
+  }
   const [c, b, a] = left.map((n, i) => tidy(n - right[i])) as Polynomial;
-  const steps = [`Start with ${input.trim()}.`, "Move all terms to one side so the equation equals zero."];
+  const steps = [`Start with ${sanitizedInput}.`, "Move all terms to one side so the equation equals zero."];
 
   if (a === 0 && b === 0) {
     if (c === 0) return { summary: "Every real number is a solution.", steps: [...steps, "Both sides simplify to the same expression."], roots: [] };

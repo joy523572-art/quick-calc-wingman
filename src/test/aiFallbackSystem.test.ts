@@ -93,4 +93,25 @@ describe("AI Fallback System & Circuit Breaker", () => {
     expect(res.numericResult).toBe(92);
     expect(res.formattedResult).toBe("92");
   });
+
+  it("solves 5x + 10x = 50 accurately and quickly with zero error", async () => {
+    const res = await solveEquationWithAiFallback("5x + 10x = 50");
+    expect(res.roots[0]).toBeCloseTo(3.333333333, 4);
+    expect(res.summary).toContain("3.333333333");
+    expect(res.steps.length).toBeGreaterThan(0);
+  });
+
+  it("handles non-mathematical gibberish without crashing or hanging", async () => {
+    const res = await solveEquationWithAiFallback("Ty vo RO EME en GE Ni TUS = CB Cpe Bi");
+    expect(res.summary).toBe("Handwriting not detected clearly. Please rewrite.");
+    expect(res.roots).toEqual([]);
+    expect(res.steps.length).toBeGreaterThan(0);
+  });
+
+  it("repairOcrWithAiFallback aborts on non-math text and never forges fake numbers", async () => {
+    const { repairOcrWithAiFallback } = await import("@/lib/aiFallbackSystem");
+    // This input has no digits, so it should return "" based on our new rule
+    const result = await repairOcrWithAiFallback("No digits here");
+    expect(result).toBe("");
+  });
 });

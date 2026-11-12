@@ -6,9 +6,8 @@ import { solveEquation } from "@/lib/equationSolver";
 import { solveEquationWithAiFallback, EquationAiResult } from "@/lib/aiFallbackSystem";
 import { canAccessPremiumFeature } from "@/lib/freemium";
 import { downloadTextPdf } from "@/lib/historyExport";
-import { useNetworkMode } from "@/lib/networkMode";
 import { PremiumLock } from "@/components/PremiumLock";
-import { Lock, AlertCircle, CheckCircle2, Camera, Upload, FileDown, Loader2, Calculator, Copy, Check, Sparkles } from "lucide-react";
+import { Lock, AlertCircle, CheckCircle2, FileDown, Loader2, Calculator, Copy, Check, Sparkles } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
 
@@ -17,50 +16,25 @@ interface EquationSolverViewProps {
   onRequestUpgrade: (featureName: string) => void;
 }
 
-/** Turns OCR text into something the solver understands. */
-const cleanOcr = (text: string) =>
-  text
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l.includes("=")) // first line with an equation
-    ?.replace(/[×xX](?=\d)/g, "*")
-    .replace(/\s+/g, " ")
-    .replace(/[—–]/g, "-") ?? text.trim();
-
-const PRESETS = [
-  "2x + 5 = 15",
-  "x² - 5x + 6 = 0",
-  "3x - 7 = 2x + 5",
-  "x² = 16",
-  "2x² + 4x - 6 = 0",
-];
-
 export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, onRequestUpgrade }) => {
-  const [inputEq, setInputEq] = useState("2x + 5 = 15");
+  const [inputEq, setInputEq] = useState("");
   const [solution, setSolution] = useState<EquationAiResult | null>(null);
   const [solvedEq, setSolvedEq] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
   const [isSolving, setIsSolving] = useState(false);
-  const cameraFileRef = useRef<HTMLInputElement>(null);
-  const galleryFileRef = useRef<HTMLInputElement>(null);
+
   const resultRef = useRef<HTMLDivElement>(null);
-  const { online } = useNetworkMode();
 
   const locked = !canAccessPremiumFeature("equation", isPro);
 
   const handleSolve = async (overrideEq?: string) => {
     if (locked) return onRequestUpgrade("Equation Solver");
+
     const target = (overrideEq !== undefined ? overrideEq : inputEq).trim();
     if (!target) {
-      setErrorMsg("Please enter an equation, e.g. 2x + 5 = 15 or x² - 5x + 6 = 0");
+      setErrorMsg("Please enter an equation");
       setSolution(null);
       return;
-    }
-
-    // Dismiss virtual keyboard cleanly without breaking pointer events
-    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur();
     }
 
     setIsSolving(true);
@@ -90,56 +64,11 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         });
         setSolvedEq(target);
       } catch (err: unknown) {
-        setErrorMsg((err as Error)?.message || "Check syntax, e.g. 2x + 5 = 15.");
+        setErrorMsg((err as Error)?.message || "Check syntax.");
         setSolution(null);
       }
     } finally {
       setIsSolving(false);
-    }
-  };
-
-  const handlePresetClick = (preset: string) => {
-    setInputEq(preset);
-    setErrorMsg(null);
-    handleSolve(preset);
-  };
-
-  const openGallery = () => {
-    if (!canAccessPremiumFeature("equation_camera", isPro)) return onRequestUpgrade("Photo Equation Upload");
-    if (!online) {
-      setErrorMsg("Photo upload OCR needs Online mode the first time it reads text. Switch to Online and try again.");
-      return;
-    }
-    galleryFileRef.current?.click();
-  };
-
-  const openCamera = () => {
-    if (!canAccessPremiumFeature("equation_camera", isPro)) return onRequestUpgrade("Camera Equation Scan");
-    if (!online) {
-      setErrorMsg("Camera scan needs Online mode the first time it reads text. Switch to Online and try again.");
-      return;
-    }
-    cameraFileRef.current?.click();
-  };
-
-  const onPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!canAccessPremiumFeature("equation_camera", isPro)) return onRequestUpgrade("Camera Equation Scan");
-    if (!file) return;
-    setScanning(true);
-    setErrorMsg(null);
-    try {
-      const { recognize } = await import("tesseract.js");
-      const { data } = await recognize(file, "eng");
-      const eq = cleanOcr(data.text || "");
-      if (!eq || !eq.includes("=")) throw new Error("No equation found in the photo. Try a clearer, closer shot.");
-      setInputEq(eq.slice(0, 4000));
-      handleSolve(eq.slice(0, 4000));
-    } catch (err) {
-      setErrorMsg((err as Error)?.message || "Could not read the photo. Please try again.");
-    } finally {
-      setScanning(false);
     }
   };
 
@@ -170,6 +99,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
 
   return (
     <Card className="rounded-3xl border border-border bg-card shadow-lg p-4 space-y-4">
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -180,7 +110,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         <div className="flex items-center justify-between">
           <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
             <Calculator className="w-3.5 h-3.5 text-primary" />
-            <span>Enter or upload equation</span>
+            <span>Enter algebraic equation</span>
           </label>
           {isPro && (
             <span className="text-[11px] text-muted-foreground font-medium">Unlimited Pro</span>
@@ -203,7 +133,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
                 handleSolve();
               }
             }}
-            placeholder="e.g. 2x + 5 = 15 or x² - 5x + 6 = 0"
+            placeholder="e.g. 2x + 5 = 15"
             className="min-h-[120px] w-full p-3.5 rounded-2xl text-sm font-mono resize-y bg-muted/30 focus:bg-background border-border/80 transition"
           />
           <div className="flex justify-between items-center text-[11px] text-muted-foreground px-1">
@@ -212,31 +142,13 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
           </div>
         </div>
 
-        {/* Quick Example Preset Pills */}
-        <div className="space-y-1">
-          <div className="text-[11px] font-semibold text-muted-foreground">Quick Examples:</div>
-          <div className="flex flex-wrap gap-1.5">
-            {PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                disabled={locked}
-                onClick={() => handlePresetClick(preset)}
-                className="px-2.5 py-1 rounded-xl text-xs font-mono bg-muted/50 hover:bg-primary/10 hover:text-primary active:scale-95 transition border border-border/60 text-foreground/80 cursor-pointer disabled:opacity-50"
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Action buttons: Solve Equation, Photo Upload, and Camera Scan */}
-        <div className="grid grid-cols-[1fr_auto_auto] gap-2 pt-1">
+        {/* Action button: Solve Equation */}
+        <div className="pt-1">
           <Button
             type="submit"
-            onClick={() => handleSolve()}
             disabled={isSolving}
-            className="h-12 min-h-[48px] rounded-xl font-bold gap-2 text-sm bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm active:scale-95 transition-all cursor-pointer"
+            style={{ touchAction: "manipulation" }}
+            className="w-full h-12 min-h-[48px] rounded-xl font-bold gap-2 text-sm bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm active:scale-95 transition-all cursor-pointer select-none"
           >
             {isSolving ? (
               <>
@@ -254,38 +166,8 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
               </>
             )}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openGallery}
-            disabled={scanning}
-            className="h-12 min-h-[48px] px-3 rounded-xl gap-1.5 hover:bg-muted active:scale-95 transition-all cursor-pointer"
-            aria-label="Upload photo of equation"
-            title="Upload photo from gallery or files"
-          >
-            {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            <span className="text-xs font-medium">Upload</span>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openCamera}
-            disabled={scanning}
-            className="h-12 min-h-[48px] px-3 rounded-xl gap-1.5 hover:bg-muted active:scale-95 transition-all cursor-pointer"
-            aria-label="Scan equation with camera"
-            title="Take photo with camera"
-          >
-            {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
-            <span className="text-xs font-medium">Camera</span>
-          </Button>
         </div>
       </form>
-
-      {/* Hidden file inputs */}
-      <input ref={galleryFileRef} type="file" accept="image/*" className="hidden" onChange={onPhoto} />
-      <input ref={cameraFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
-
-      {scanning && <p className="text-xs text-muted-foreground animate-pulse">Reading equation from photo…</p>}
 
       {/* Result scroll anchor */}
       <div ref={resultRef} className="space-y-4">

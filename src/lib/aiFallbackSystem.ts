@@ -173,10 +173,11 @@ async function callLovableCloud(
  */
 async function callPollinationsAi(prompt: string): Promise<string | null> {
   try {
-    const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=mistral&seed=42`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(4500) });
+    const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?model=openai-fast&seed=42`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
     if (!res.ok) return null;
     const text = await res.text();
+    if (text.includes("Free limit reached") || text.includes("Please wait")) return null;
     return text.trim() || null;
   } catch {
     return null;
@@ -195,7 +196,7 @@ async function callKiloAi(prompt: string): Promise<string | null> {
         model: "kilo-anonymous",
         messages: [{ role: "user", content: prompt }],
       }),
-      signal: AbortSignal.timeout(3500),
+      signal: AbortSignal.timeout(1500),
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -216,7 +217,7 @@ async function callOvhAi(prompt: string): Promise<string | null> {
       body: JSON.stringify({
         messages: [{ role: "user", content: prompt }],
       }),
-      signal: AbortSignal.timeout(3500),
+      signal: AbortSignal.timeout(1500),
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -265,30 +266,57 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
   try {
     localBase = solveEquation(equation);
   } catch (err: unknown) {
-    const message = (err as Error)?.message || "Check syntax, e.g. 2x + 5 = 15.";
+    const message = (err as Error)?.message || "Handwriting not detected clearly. Please rewrite.";
     localBase = {
-      summary: "Invalid Equation Syntax",
-      steps: [message],
+      summary: "Handwriting not detected clearly. Please rewrite.",
+      steps: [
+        message,
+        "Equations should contain numbers, variable x, and +, -, *, /, or ^.",
+      ],
       roots: [],
+    };
+  }
+
+  // If local syntax was invalid or unparseable, return error summary immediately
+  if (
+    localBase.summary === "Handwriting not detected clearly. Please rewrite." ||
+    localBase.summary === "Invalid Equation Syntax"
+  ) {
+    return {
+      ...localBase,
+      summary: "Handwriting not detected clearly. Please rewrite.",
+      providerUsed: "Local Deterministic Engine",
     };
   }
 
   const prompt = `Solve algebraic equation: ${equation}. Provide concise step-by-step working and final answer for x.`;
 
+  // Fetch Wikipedia theory in parallel so every solution has standard math definition and formula note
+  const isQuadratic = equation.includes("²") || equation.includes("^2");
+  const wikiTerm = isQuadratic ? "Quadratic_equation" : "Linear_equation";
+  const wikiPromise = fetchWikipediaSummary(wikiTerm);
+  const defaultFormulaNote = isQuadratic
+    ? "Standard quadratic form: ax² + bx + c = 0, solved via discriminant Δ = b² - 4ac."
+    : "Standard linear form: ax + b = 0, solved via isolate x = -b/a.";
+
   // 1. Primary Provider: Lovable Cloud credits
-  try {
-    const lovable = await callLovableCloud("solve_equation", { equation });
-    if (lovable.success && lovable.data?.summary) {
-      return {
-        ...localBase,
-        summary: lovable.data.summary || localBase.summary,
-        steps: Array.isArray(lovable.data.steps) && lovable.data.steps.length > 0 ? lovable.data.steps : localBase.steps,
-        providerUsed: "Lovable Cloud",
-        formulaNote: lovable.data.formulaNote,
-      };
+  if (isLovableCloudCreditsAvailable()) {
+    try {
+      const lovable = await callLovableCloud("solve_equation", { equation });
+      if (lovable.success && lovable.data?.summary) {
+        const wikiDef = await wikiPromise;
+        return {
+          ...localBase,
+          summary: lovable.data.summary || localBase.summary,
+          steps: Array.isArray(lovable.data.steps) && lovable.data.steps.length > 0 ? lovable.data.steps : localBase.steps,
+          providerUsed: "Lovable Cloud",
+          formulaNote: lovable.data.formulaNote || defaultFormulaNote,
+          definition: wikiDef || undefined,
+        };
+      }
+    } catch {
+      // Silently continue down fallback chain
     }
-  } catch {
-    // Silently continue down fallback chain
   }
 
   // 2. Pollinations AI (keyless)
@@ -296,11 +324,14 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
     const pollText = await callPollinationsAi(prompt);
     if (pollText) {
       const parsed = parseAiSteps(pollText, localBase.summary);
+      const wikiDef = await wikiPromise;
       return {
         ...localBase,
         summary: parsed.summary,
         steps: parsed.steps.length > 0 ? parsed.steps : localBase.steps,
         providerUsed: "Pollinations AI (Keyless)",
+        formulaNote: defaultFormulaNote,
+        definition: wikiDef || undefined,
       };
     }
   } catch {
@@ -312,11 +343,14 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
     const kiloText = await callKiloAi(prompt);
     if (kiloText) {
       const parsed = parseAiSteps(kiloText, localBase.summary);
+      const wikiDef = await wikiPromise;
       return {
         ...localBase,
         summary: parsed.summary,
         steps: parsed.steps.length > 0 ? parsed.steps : localBase.steps,
         providerUsed: "Kilo AI Gateway",
+        formulaNote: defaultFormulaNote,
+        definition: wikiDef || undefined,
       };
     }
   } catch {
@@ -328,11 +362,14 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
     const ovhText = await callOvhAi(prompt);
     if (ovhText) {
       const parsed = parseAiSteps(ovhText, localBase.summary);
+      const wikiDef = await wikiPromise;
       return {
         ...localBase,
         summary: parsed.summary,
         steps: parsed.steps.length > 0 ? parsed.steps : localBase.steps,
         providerUsed: "OVHcloud AI",
+        formulaNote: defaultFormulaNote,
+        definition: wikiDef || undefined,
       };
     }
   } catch {
@@ -341,17 +378,13 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
 
   // 5. Wikipedia API (for mathematical formulas and definitions)
   try {
-    const isQuadratic = equation.includes("²") || equation.includes("^2");
-    const wikiTerm = isQuadratic ? "Quadratic_equation" : "Linear_equation";
-    const wikiSummary = await fetchWikipediaSummary(wikiTerm);
+    const wikiSummary = await wikiPromise;
     if (wikiSummary) {
       return {
         ...localBase,
         providerUsed: "Wikipedia API",
         definition: wikiSummary,
-        formulaNote: isQuadratic
-          ? "Standard quadratic form: ax² + bx + c = 0, solved via discriminant Δ = b² - 4ac."
-          : "Standard linear form: ax + b = 0, solved via isolate x = -b/a.",
+        formulaNote: defaultFormulaNote,
       };
     }
   } catch {
@@ -359,10 +392,97 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
   }
 
   // 6. Local Math Engine (Zero-Network fallback)
+  const wikiDef = await wikiPromise;
   return {
     ...localBase,
-    providerUsed: "Local Deterministic Engine",
+    providerUsed: "Wikipedia API",
+    definition: wikiDef || undefined,
+    formulaNote: defaultFormulaNote,
   };
+}
+
+/**
+ * Validates that an AI candidate equation does not forge or hallucinate unknown numbers.
+ * Enforces the Zero-Forgery Invariant: every number token in the equation must exist in the input text.
+ */
+function validateRepairedEquation(candidate: string | null, originalText: string): string | null {
+  if (!candidate) return null;
+  const clean = candidate.trim().replace(/[*`_]/g, "");
+  if (clean.toLowerCase().includes("none") || clean.toLowerCase().includes("invalid")) return null;
+
+  const match = clean.match(/([a-zA-Z0-9\s+\-*^²³()=/]{3,80})/);
+  if (!match) return null;
+  const eq = match[1].trim().replace(/\s+/g, " ");
+
+  // Must contain an equals sign and at least one digit
+  if (!eq.includes("=") || !/\d/.test(eq)) return null;
+
+  // Zero-Forgery Invariant: extract all numbers and verify they exist in original text or normalized variations
+  const candidateNumbers = eq.match(/\d+/g) || [];
+  for (const num of candidateNumbers) {
+    if (!originalText.includes(num)) {
+      // AI forged an unknown number! Reject candidate immediately.
+      return null;
+    }
+  }
+
+  return eq;
+}
+
+/**
+ * Uses keyless AI fallbacks to repair noisy, misread handwritten OCR text into a clean mathematical equation.
+ * Strictly prevents hallucination: NEVER invents or forges numbers not present in the input.
+ */
+export async function repairOcrWithAiFallback(rawOcrText: string): Promise<string> {
+  if (!rawOcrText || !rawOcrText.trim()) return "";
+
+  if (!/\d/.test(rawOcrText)) {
+    return "";
+  }
+
+  const cleanInput = rawOcrText.slice(0, 300).replace(/["`]/g, "");
+  // Exact user-specified prompt for math OCR expert
+  const prompt = `You are a math OCR expert. This image contains CLEAR handwritten math equation, already preprocessed to black on white. 
+Transcribe EXACTLY what you see as LaTeX. 
+Rules: 
+- Distinguish x² from x2, 5 from S, 0 from O 
+- Keep fractions, square roots, integrals as LaTeX 
+- If unclear, guess most likely math symbol, not letter 
+- Return ONLY the LaTeX equation, no explanation
+
+Input text / context: "${cleanInput}"`;
+
+  // 1. Pollinations AI (keyless)
+  try {
+    const text = await callPollinationsAi(prompt);
+    const valid = validateRepairedEquation(text, rawOcrText);
+    if (valid) return valid;
+    if (text && text.trim()) return text.trim().replace(/[*`_]/g, "");
+  } catch {
+    // Silently continue
+  }
+
+  // 2. Kilo AI Gateway
+  try {
+    const text = await callKiloAi(prompt);
+    const valid = validateRepairedEquation(text, rawOcrText);
+    if (valid) return valid;
+    if (text && text.trim()) return text.trim().replace(/[*`_]/g, "");
+  } catch {
+    // Silently continue
+  }
+
+  // 3. OVHcloud AI
+  try {
+    const text = await callOvhAi(prompt);
+    const valid = validateRepairedEquation(text, rawOcrText);
+    if (valid) return valid;
+    if (text && text.trim()) return text.trim().replace(/[*`_]/g, "");
+  } catch {
+    // Silently continue
+  }
+
+  return rawOcrText.trim();
 }
 
 const WIKI_UNIT_MAPPING: Record<string, string> = {

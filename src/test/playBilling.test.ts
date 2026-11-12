@@ -59,8 +59,8 @@ describe("Google Play Lifetime Product & 1-Day Trial integration", () => {
     expect(localStorage.getItem("billing_plan_id")).toBeNull();
   });
 
-  it("allows free trial and blocks after 3 distinct days", () => {
-    localStorage.setItem("activeDays", JSON.stringify(["Mon Jan 01 2024", "Tue Jan 02 2024", "Wed Jan 03 2024", "Thu Jan 04 2024"]));
+  it("allows free trial and blocks on the 3rd distinct day", () => {
+    localStorage.setItem("activeDays", JSON.stringify(["Mon Jan 01 2024", "Tue Jan 02 2024", "Wed Jan 03 2024"]));
 
     expect(isWithinTrialPeriod()).toBe(false);
     expect(isAppPermanentlyBlocked(false)).toBe(true);

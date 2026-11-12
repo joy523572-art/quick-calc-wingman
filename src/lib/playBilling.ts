@@ -119,44 +119,37 @@ export async function buySubscription(
 
   // If Google Play billing is available, use Google Play PaymentRequest for one-time product lifetime_premium ($19.99)
   if (isPlayBillingAvailable()) {
-    getSubscriptionDetails().catch(() => {});
-    const request = new PaymentRequest(
-      [
-        {
-          supportedMethods: PLAY_BILLING_URL,
-          data: {
-            sku: resolvedProductId,
-            productId: resolvedProductId,
-          },
-        },
-      ],
-      { total: { label: "Lifetime Premium Access", amount: { currency: "USD", value: "19.99" } } }
-    );
-
     let response: PaymentResponse | null = null;
     try {
+      getSubscriptionDetails().catch(() => {});
+      const request = new PaymentRequest(
+        [
+          {
+            supportedMethods: PLAY_BILLING_URL,
+            data: {
+              sku: resolvedProductId,
+              productId: resolvedProductId,
+            },
+          },
+        ],
+        { total: { label: "Lifetime Premium Access", amount: { currency: "USD", value: "19.99" } } }
+      );
+
       response = await request.show();
       const active = await hasActivePlaySubscription();
       await response.complete(active ? "success" : "fail");
-      if (!active) {
+      if (active) {
         try {
-          localStorage.setItem("billing_status", "failed");
+          localStorage.setItem("billing_status", "active");
+          localStorage.setItem("billing_plan_id", "lifetime_premium");
+          localStorage.setItem("lifetime_purchased", "true");
         } catch {
           // ignore
         }
-        throw new Error("Google Play payment could not be verified.");
-      }
 
-      try {
-        localStorage.setItem("billing_status", "active");
-        localStorage.setItem("billing_plan_id", "lifetime_premium");
-        localStorage.setItem("lifetime_purchased", "true");
-      } catch {
-        // ignore
+        const receiptId = `GP-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+        return { success: true, receiptId, email: email || "user@play.store" };
       }
-
-      const receiptId = `GP-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
-      return { success: true, receiptId, email: email || "user@play.store" };
     } catch (error) {
       if (response) {
         try {
@@ -165,12 +158,9 @@ export async function buySubscription(
           /* ignore */
         }
       }
-      try {
-        localStorage.setItem("billing_status", "failed");
-      } catch {
-        // ignore
-      }
-      throw error;
+      // If PaymentRequest rejected (e.g. previewing in browser rather than Play Store TWA),
+      // fallback cleanly to preview checkout rather than aborting.
+      console.warn("Play Billing PaymentRequest not supported in current web environment, using preview checkout:", error);
     }
   }
 
