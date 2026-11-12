@@ -7,9 +7,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Check, Sparkles, Lock, RefreshCw, AlertCircle, Mail, Receipt, ShieldAlert } from "lucide-react";
-import { isPlayBillingAvailable, getWebSubscriptionRecord, cancelWebSubscription } from "@/lib/playBilling";
+import { Check, Sparkles, Lock, RefreshCw, AlertCircle, ShieldAlert, ShoppingBag } from "lucide-react";
+import { isPlayBillingAvailable, resetPlaySubscription } from "@/lib/playBilling";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -17,7 +16,7 @@ interface UpgradeModalProps {
   featureTrigger?: string;
   isPro: boolean;
   isBlocked?: boolean;
-  onPurchase: (productId?: string, basePlanId?: string, email?: string) => Promise<boolean>;
+  onPurchase: (productId?: string, basePlanId?: string) => Promise<boolean>;
   onRestore: () => Promise<boolean>;
   onSubscriptionResult?: (success: boolean, planId: string, error?: string) => void;
 }
@@ -32,28 +31,18 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   onRestore,
   onSubscriptionResult,
 }) => {
-  const [email, setEmail] = useState<string>("user@play.store");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [receiptDetails, setReceiptDetails] = useState<{ receiptId: string; email: string } | null>(null);
-
-  const webRecord = getWebSubscriptionRecord();
 
   const handleBuy = async () => {
-    const emailToUse = email && email.includes("@") ? email.trim() : "user@play.store";
-
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const ok = await onPurchase("lifetime_premium", "lifetime_premium", emailToUse);
+      const ok = await onPurchase("lifetime_premium", "lifetime_premium");
       if (ok) {
-        const record = getWebSubscriptionRecord();
-        if (record) {
-          setReceiptDetails({ receiptId: record.receiptId, email: record.email });
-        }
-        setSuccessMsg("Purchase successful! Lifetime Premium unlocked permanently.");
+        setSuccessMsg("Purchase successful! Lifetime Premium unlocked permanently via Google Play.");
         onSubscriptionResult?.(true, "lifetime_premium");
         setTimeout(() => {
           onOpenChange(false);
@@ -66,7 +55,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     } catch (err: unknown) {
       const msg =
         (err as Error)?.message ||
-        "Purchase could not be completed. Please check your details and try again.";
+        "Google Play checkout could not be completed. Please check your account and try again.";
       setErrorMsg(msg);
       onSubscriptionResult?.(false, "lifetime_premium", msg);
     } finally {
@@ -81,20 +70,16 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     try {
       const active = await onRestore();
       if (active) {
-        const record = getWebSubscriptionRecord();
-        if (record) {
-          setReceiptDetails({ receiptId: record.receiptId, email: record.email });
-        }
-        setSuccessMsg("Lifetime Premium restored successfully!");
+        setSuccessMsg("Lifetime Premium restored successfully from Google Play!");
         onSubscriptionResult?.(true, "lifetime_premium");
         setTimeout(() => onOpenChange(false), 1200);
       } else {
-        const msg = "No active lifetime purchase found for this account.";
+        const msg = "No active lifetime purchase found in Google Play for this account.";
         setErrorMsg(msg);
         onSubscriptionResult?.(false, "Restore", msg);
       }
     } catch {
-      const msg = "Purchase verification completed.";
+      const msg = "Google Play purchase verification completed.";
       setErrorMsg(msg);
       onSubscriptionResult?.(false, "Restore", msg);
     } finally {
@@ -102,16 +87,11 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     }
   };
 
-  const handleCancelSub = () => {
-    cancelWebSubscription();
-    setReceiptDetails(null);
-    setSuccessMsg("Access reset.");
-    onRestore();
-  };
-
   const handleOpenChangeInternal = (newOpen: boolean) => {
     onOpenChange(newOpen);
   };
+
+  const playAvailable = isPlayBillingAvailable();
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChangeInternal}>
@@ -139,10 +119,10 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             {isBlocked && !isPro
-              ? "You have used your 2 lifetime free trials for this advanced feature. Unlock Lifetime Access ($19.99) to use all advanced tools without limits, or continue using the scientific calculator freely."
+              ? "You have used your 2 lifetime free trials for this advanced feature. Unlock Lifetime Access ($19.99) via Google Play to use all advanced tools without limits."
               : featureTrigger
-              ? `Your 2 free trial uses for ${featureTrigger} are complete. Unlock Lifetime Access ($19.99) to keep using all features forever.`
-              : "Pay once for $19.99 and get unrestricted lifetime access to 2D Graphing, Equation Solver, Converter, and Calculation History."}
+              ? `Your free trial uses for ${featureTrigger} are complete. Unlock Lifetime Access ($19.99) via Google Play to keep using all features forever.`
+              : "Pay once for $19.99 via Google Play In-App Billing and get unrestricted lifetime access to 2D Graphing, Equation Solver, Converter, and Calculation History."}
           </DialogDescription>
         </DialogHeader>
 
@@ -150,7 +130,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           <div className="p-3.5 rounded-2xl bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
             <div className="space-y-0.5">
-              <span className="font-semibold block">Notice</span>
+              <span className="font-semibold block">Google Play Notice</span>
               <span className="leading-relaxed block">{errorMsg}</span>
             </div>
           </div>
@@ -163,46 +143,26 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
         )}
 
-        {receiptDetails && (
-          <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/20 text-xs space-y-1">
-            <div className="flex items-center gap-1.5 font-bold text-primary">
-              <Receipt className="w-4 h-4" /> Lifetime Purchase Receipt
-            </div>
-            <div className="text-foreground/90 font-mono">Receipt ID: {receiptDetails.receiptId}</div>
-            <div className="text-muted-foreground">Sent to: {receiptDetails.email}</div>
-          </div>
-        )}
-
         {/* Lifetime Managed Product Selection Card */}
         <div className="my-2">
           <div className="p-4 rounded-2xl border border-primary bg-primary/5 ring-1 ring-primary relative flex items-center justify-between">
             <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary text-primary-foreground uppercase tracking-wider">
-              One-Time Purchase
+              Google Play Product
             </span>
             <div>
               <div className="text-xs font-semibold text-muted-foreground">Product ID: lifetime_premium</div>
               <div className="text-2xl font-black text-foreground mt-0.5">$19.99</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">Pay once, keep forever</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">One-time in-app purchase</div>
             </div>
-            <div className="text-right text-[11px] font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-lg">
-              {isPlayBillingAvailable() ? "Google Play In-App" : "Instant Checkout"}
+            <div className="text-right text-[11px] font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-lg flex items-center gap-1">
+              <ShoppingBag className="w-3.5 h-3.5" /> Google Play
             </div>
           </div>
         </div>
 
-        {/* Email input for web checkout receipt */}
-        {!isPlayBillingAvailable() && (
-          <div className="space-y-1 my-1">
-            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-primary" /> Email Address (for lifetime receipt)
-            </label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="h-10 rounded-xl text-xs"
-            />
+        {!playAvailable && (
+          <div className="p-3 rounded-xl bg-muted/60 border border-border text-[11px] text-muted-foreground leading-relaxed">
+            Google Play In-App Billing activates automatically when opening this app from your installed Android app via the Google Play Store.
           </div>
         )}
 
@@ -226,7 +186,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
           <div className="flex items-center gap-2 font-semibold text-primary">
             <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>No recurring subscriptions. Pay once for $19.99.</span>
+            <span>Verified via Google Digital Goods API.</span>
           </div>
         </div>
 
@@ -260,24 +220,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               type="button"
               onClick={handleRestore}
               disabled={loading}
-              className="hover:underline text-muted-foreground hover:text-foreground"
+              className="hover:underline text-muted-foreground hover:text-foreground font-medium"
             >
               Restore Purchase
             </button>
-            {isPro && webRecord ? (
-              <button
-                type="button"
-                onClick={handleCancelSub}
-                className="text-destructive hover:underline"
-              >
-                Reset Storage
-              </button>
-            ) : (
-              <span>Instant receipt upon purchase</span>
-            )}
+            <span className="text-[10px] text-muted-foreground">Google Play Billing</span>
           </div>
         </div>
       </DialogContent>
     </Dialog>
   );
 };
+

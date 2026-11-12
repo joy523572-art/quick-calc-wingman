@@ -4,9 +4,7 @@ import {
   hasActivePlaySubscription,
   buySubscription,
   isPlayBillingAvailable,
-  getWebSubscriptionRecord,
-  cancelWebSubscription,
-  WebSubscriptionRecord,
+  resetPlaySubscription,
 } from "@/lib/playBilling";
 
 export function usePlayBilling() {
@@ -14,7 +12,6 @@ export function usePlayBilling() {
   const [loading, setLoading] = useState(true);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [subscriptionRecord, setSubscriptionRecord] = useState<WebSubscriptionRecord | null>(null);
 
   const checkSubscription = useCallback(async () => {
     setLoading(true);
@@ -22,11 +19,9 @@ export function usePlayBilling() {
     try {
       const active = await hasActivePlaySubscription();
       setIsPro(active);
-      setSubscriptionRecord(getWebSubscriptionRecord());
       return active;
     } catch {
       setIsPro(false);
-      setSubscriptionRecord(null);
       return false;
     } finally {
       setLoading(false);
@@ -38,15 +33,16 @@ export function usePlayBilling() {
   }, [checkSubscription]);
 
   const purchasePlan = useCallback(
-    async (productId: string, basePlanId?: string, email?: string): Promise<boolean> => {
+    async (productId: string, basePlanId?: string): Promise<boolean> => {
       setPurchaseLoading(true);
       setError(null);
       try {
-        await buySubscription(productId, basePlanId, email);
-        const active = await hasActivePlaySubscription();
-        setIsPro(active);
-        setSubscriptionRecord(getWebSubscriptionRecord());
-        return active;
+        const result = await buySubscription(productId, basePlanId);
+        if (result && result.success) {
+          setIsPro(true);
+          return true;
+        }
+        return false;
       } catch (err: unknown) {
         const msg = (err as Error)?.message || "Subscription could not be completed.";
         setError(msg);
@@ -55,7 +51,7 @@ export function usePlayBilling() {
         } catch {
           // ignore
         }
-        return false;
+        throw err;
       } finally {
         setPurchaseLoading(false);
       }
@@ -64,9 +60,8 @@ export function usePlayBilling() {
   );
 
   const cancelSub = useCallback(() => {
-    cancelWebSubscription();
+    resetPlaySubscription();
     setIsPro(false);
-    setSubscriptionRecord(null);
   }, []);
 
   return {
@@ -74,7 +69,6 @@ export function usePlayBilling() {
     loading,
     purchaseLoading,
     error,
-    subscriptionRecord,
     plans: SUBSCRIPTIONS,
     checkSubscription,
     purchasePlan,
@@ -82,3 +76,4 @@ export function usePlayBilling() {
     isAvailable: isPlayBillingAvailable(),
   };
 }
+
