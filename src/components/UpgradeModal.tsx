@@ -7,8 +7,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Check, Sparkles, Lock, RefreshCw, AlertCircle, ShieldAlert, ShoppingBag } from "lucide-react";
-import { isPlayBillingAvailable, resetPlaySubscription } from "@/lib/playBilling";
+import { Check, Sparkles, Lock, RefreshCw, AlertCircle, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { isPlayBillingAvailable, SUBSCRIPTIONS, SubscriptionPlan } from "@/lib/playBilling";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -16,7 +16,7 @@ interface UpgradeModalProps {
   featureTrigger?: string;
   isPro: boolean;
   isBlocked?: boolean;
-  onPurchase: (productId?: string, basePlanId?: string) => Promise<boolean>;
+  onPurchase: (productId: string, basePlanId: string) => Promise<boolean>;
   onRestore: () => Promise<boolean>;
   onSubscriptionResult?: (success: boolean, planId: string, error?: string) => void;
 }
@@ -31,6 +31,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   onRestore,
   onSubscriptionResult,
 }) => {
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>(SUBSCRIPTIONS[0]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -40,24 +41,24 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     setErrorMsg(null);
     setSuccessMsg(null);
     try {
-      const ok = await onPurchase("lifetime_premium", "lifetime_premium");
+      const ok = await onPurchase(selectedPlan.productId, selectedPlan.basePlanId);
       if (ok) {
-        setSuccessMsg("Purchase successful! Lifetime Premium unlocked permanently via Google Play.");
-        onSubscriptionResult?.(true, "lifetime_premium");
+        setSuccessMsg(`Subscription to ${selectedPlan.cadence} confirmed via Google Play!`);
+        onSubscriptionResult?.(true, selectedPlan.id);
         setTimeout(() => {
           onOpenChange(false);
         }, 1400);
       } else {
-        const msg = "Purchase could not be completed. Please try again.";
+        const msg = "Subscription could not be completed. Please try again.";
         setErrorMsg(msg);
-        onSubscriptionResult?.(false, "lifetime_premium", msg);
+        onSubscriptionResult?.(false, selectedPlan.id, msg);
       }
     } catch (err: unknown) {
       const msg =
         (err as Error)?.message ||
-        "Google Play checkout could not be completed. Please check your account and try again.";
+        "Google Play subscription could not be completed. Please check your account and try again.";
       setErrorMsg(msg);
-      onSubscriptionResult?.(false, "lifetime_premium", msg);
+      onSubscriptionResult?.(false, selectedPlan.id, msg);
     } finally {
       setLoading(false);
     }
@@ -70,16 +71,16 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     try {
       const active = await onRestore();
       if (active) {
-        setSuccessMsg("Lifetime Premium restored successfully from Google Play!");
-        onSubscriptionResult?.(true, "lifetime_premium");
+        setSuccessMsg("PRO subscription restored successfully from Google Play!");
+        onSubscriptionResult?.(true, "restored");
         setTimeout(() => onOpenChange(false), 1200);
       } else {
-        const msg = "No active lifetime purchase found in Google Play for this account.";
+        const msg = "No active PRO subscription found in Google Play for this account.";
         setErrorMsg(msg);
         onSubscriptionResult?.(false, "Restore", msg);
       }
     } catch {
-      const msg = "Google Play purchase verification completed.";
+      const msg = "Google Play subscription verification completed.";
       setErrorMsg(msg);
       onSubscriptionResult?.(false, "Restore", msg);
     } finally {
@@ -115,14 +116,14 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               ? "Free Trial Uses Reached"
               : featureTrigger
               ? `Unlock ${featureTrigger}`
-              : "Get Unlimited Lifetime Access"}
+              : "Unlock All Features"}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             {isBlocked && !isPro
-              ? "You have used your 2 lifetime free trials for this advanced feature. Unlock Lifetime Access ($19.99) via Google Play to use all advanced tools without limits."
+              ? "You have used your 3 free lifetime trials for this advanced feature. Subscribe to unlock all features without limits."
               : featureTrigger
-              ? `Your free trial uses for ${featureTrigger} are complete. Unlock Lifetime Access ($19.99) via Google Play to keep using all features forever.`
-              : "Pay once for $19.99 via Google Play In-App Billing and get unrestricted lifetime access to 2D Graphing, Equation Solver, Converter, and Calculation History."}
+              ? `Your free trial uses for ${featureTrigger} are complete. Unlock All Features to keep using all tools forever.`
+              : "Choose a subscription plan via Google Play In-App Billing for unlimited access to all calculator features."}
           </DialogDescription>
         </DialogHeader>
 
@@ -143,21 +144,40 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
           </div>
         )}
 
-        {/* Lifetime Managed Product Selection Card */}
-        <div className="my-2">
-          <div className="p-4 rounded-2xl border border-primary bg-primary/5 ring-1 ring-primary relative flex items-center justify-between">
-            <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary text-primary-foreground uppercase tracking-wider">
-              Google Play Product
-            </span>
-            <div>
-              <div className="text-xs font-semibold text-muted-foreground">Product ID: lifetime_premium</div>
-              <div className="text-2xl font-black text-foreground mt-0.5">$19.99</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">One-time in-app purchase</div>
-            </div>
-            <div className="text-right text-[11px] font-medium text-primary bg-primary/10 px-2.5 py-1 rounded-lg flex items-center gap-1">
-              <ShoppingBag className="w-3.5 h-3.5" /> Google Play
-            </div>
-          </div>
+        {/* Subscription Plan Selection Cards */}
+        <div className="grid grid-cols-2 gap-3 my-2">
+          {SUBSCRIPTIONS.map((plan) => {
+            const isSelected = selectedPlan.id === plan.id;
+            return (
+              <button
+                key={plan.id}
+                type="button"
+                onClick={() => setSelectedPlan(plan)}
+                className={`p-3.5 rounded-2xl border text-left transition relative flex flex-col justify-between ${
+                  isSelected
+                    ? "border-primary bg-primary/5 ring-2 ring-primary"
+                    : "border-border bg-card hover:border-primary/50"
+                }`}
+              >
+                {isSelected && (
+                  <span className="absolute -top-2 right-3 px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary text-primary-foreground uppercase tracking-wider">
+                    Selected
+                  </span>
+                )}
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground">
+                    {plan.id === "premium_monthly" ? "Monthly Plan" : "Weekly Plan"}
+                  </div>
+                  <div className="text-xl font-black text-foreground mt-0.5">{plan.price}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{plan.cadence}</div>
+                </div>
+                <div className="mt-3 flex items-center gap-1 text-[11px] font-bold text-primary">
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${isSelected ? "opacity-100" : "opacity-40"}`} />
+                  <span>{isSelected ? "Selected" : "Select"}</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         {!playAvailable && (
@@ -170,11 +190,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         <div className="space-y-1.5 py-1 text-xs text-foreground/80">
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>Unlimited 2D Graphing Calculator</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>Step-by-step Linear & Quadratic Solver</span>
+            <span>Unlock All Features (Graphing, Solver, History)</span>
           </div>
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-primary shrink-0" />
@@ -200,17 +216,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             {isPro ? (
               <>
                 <Check className="w-4 h-4" />
-                Lifetime Access Active
+                Subscription Active
               </>
             ) : loading ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                Processing Purchase...
+                Processing Subscription...
               </>
             ) : (
               <>
                 <Lock className="w-4 h-4" />
-                Unlock Lifetime Access ($19.99)
+                Unlock All Features ({selectedPlan.price})
               </>
             )}
           </Button>
@@ -222,7 +238,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
               disabled={loading}
               className="hover:underline text-muted-foreground hover:text-foreground font-medium"
             >
-              Restore Purchase
+              Restore Subscription
             </button>
             <span className="text-[10px] text-muted-foreground">Google Play Billing</span>
           </div>
@@ -231,4 +247,3 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     </Dialog>
   );
 };
-

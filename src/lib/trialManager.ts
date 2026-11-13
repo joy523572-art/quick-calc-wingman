@@ -1,23 +1,22 @@
 /**
- * Manages Lifetime Free Trial uses per premium feature with Multi-Tier Permanent Persistence.
- * Scientific Calculator is permanently 100% FREE & UNLIMITED for all users.
- * Unit & Currency Converter receives 4 lifetime free trial uses (1 for each of its 4 categories).
- * Other advanced tools (2D Graphing, Step-by-Step Solver, Calculation History) receive 2 lifetime free trial uses.
- *
- * Persistence Strategy:
- * Trial counts are mirrored across localStorage, document.cookie (max-age 10 yrs), and IndexedDB.
- * If any storage layer is cleared, the highest count is automatically recovered from the other layers.
+ * Manages Free Trial uses per premium feature with 24-hour expiry & multi-tier permanent persistence.
+ * Calculator calculation engine and Offline/Online toggle are permanently 100% FREE & UNLIMITED.
+ * Unit & Currency Converter receives 4 free lifetime trial uses.
+ * Other advanced tools (2D Graphing, Step-by-Step Solver, Calculation History) receive 3 free lifetime trial uses.
+ * Activated free trials automatically expire after 24 hours.
  */
 
 export function getMaxFeatureTrials(featureKey: string): number {
   if (featureKey === "converter") {
     return 4;
   }
-  return 2;
+  return 3;
 }
 
-export const MAX_FEATURE_FREE_TRIALS = 2; // Default for non-converter features
+export const MAX_FEATURE_FREE_TRIALS = 3; // Default for non-converter features
 const FEATURE_TRIAL_PREFIX = "nume.feature_trials.";
+const TRIAL_TIMESTAMP_PREFIX = "nume.trial_timestamp.";
+const TRIAL_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 const ALL_FEATURE_KEYS = ["graph", "equation", "converter", "history", "history_pdf", "equation_camera"];
 
 export type FeatureKey = "calculator" | "graph" | "equation" | "converter" | "history" | "history_pdf";
@@ -68,9 +67,33 @@ function removeCookieTrialCount(featureKey: string): void {
   }
 }
 
+/**
+ * Checks if the 24-hour trial window for a feature has expired.
+ * If expired, trial count resets to allow fresh trials.
+ */
+function checkAndResetExpiredTrial(featureKey: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const rawTimestamp = localStorage.getItem(`${TRIAL_TIMESTAMP_PREFIX}${featureKey}`);
+    if (rawTimestamp) {
+      const startTime = parseInt(rawTimestamp, 10);
+      if (!isNaN(startTime) && Date.now() - startTime > TRIAL_EXPIRY_MS) {
+        // 24 hours elapsed — reset trial count for this feature
+        localStorage.removeItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`);
+        localStorage.removeItem(`${TRIAL_TIMESTAMP_PREFIX}${featureKey}`);
+        removeCookieTrialCount(featureKey);
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function getFeatureTrialCount(featureKey: string): number {
   if (typeof window === "undefined") return 0;
   try {
+    checkAndResetExpiredTrial(featureKey);
+
     let localCount = 0;
     const raw = localStorage.getItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`);
     if (raw) {
@@ -83,7 +106,6 @@ export function getFeatureTrialCount(featureKey: string): number {
     // Take highest value across local storage & cookies
     const highestCount = Math.max(localCount, cookieCount);
 
-    // Auto-repair storage layers if one was cleared/reset
     if (highestCount > localCount) {
       localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`, highestCount.toString());
     }
@@ -104,6 +126,12 @@ export function consumeFeatureTrial(featureKey: string): number {
     const updated = current + 1;
     localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`, updated.toString());
     setCookieTrialCount(featureKey, updated);
+
+    // Set 24-hour start timestamp if not already set
+    if (!localStorage.getItem(`${TRIAL_TIMESTAMP_PREFIX}${featureKey}`)) {
+      localStorage.setItem(`${TRIAL_TIMESTAMP_PREFIX}${featureKey}`, Date.now().toString());
+    }
+
     // Dispatch custom event for real-time UI updates
     window.dispatchEvent(new Event("nume:feature-trial-used"));
     return updated;
@@ -114,7 +142,7 @@ export function consumeFeatureTrial(featureKey: string): number {
 
 export function hasFeatureFreeTrials(featureKey: string, isPro: boolean): boolean {
   if (isPro) return true;
-  if (featureKey === "calculator") return true;
+  if (featureKey === "calculator" || featureKey === "network") return true;
 
   try {
     if (typeof window === "undefined") return true;
@@ -129,13 +157,16 @@ export function hasFeatureFreeTrials(featureKey: string, isPro: boolean): boolea
       return false;
     }
 
-    const isLifetime =
-      localStorage.getItem('lifetime_purchased') === 'true' ||
+    const isSubscribed =
+      localStorage.getItem('subscription_active') === 'true' ||
       localStorage.getItem('billing_status') === 'active' ||
-      localStorage.getItem('billing_plan_id') === 'lifetime_premium';
-    if (isLifetime) return true;
+      localStorage.getItem('billing_plan_id') === 'premium_monthly' ||
+      localStorage.getItem('billing_plan_id') === 'premium_weekly';
+    if (isSubscribed) return true;
 
     if (localStorage.getItem('force_trial_lock') === 'true') return false;
+
+    checkAndResetExpiredTrial(featureKey);
 
     const used = getFeatureTrialCount(featureKey);
     const maxTrials = getMaxFeatureTrials(featureKey);
@@ -146,7 +177,7 @@ export function hasFeatureFreeTrials(featureKey: string, isPro: boolean): boolea
 }
 
 export function getFeatureRemainingTrials(featureKey: string, isPro: boolean): number {
-  if (isPro || featureKey === "calculator") return Infinity;
+  if (isPro || featureKey === "calculator" || featureKey === "network") return Infinity;
   if (!hasFeatureFreeTrials(featureKey, isPro)) return 0;
   const used = getFeatureTrialCount(featureKey);
   const maxTrials = getMaxFeatureTrials(featureKey);
@@ -155,7 +186,6 @@ export function getFeatureRemainingTrials(featureKey: string, isPro: boolean): n
 
 export function isAppPermanentlyBlocked(isPro: boolean): boolean {
   if (isPro) return false;
-  // Blocked if all primary premium tools have used up their free trials
   const graphExhausted = !hasFeatureFreeTrials("graph", false);
   const eqExhausted = !hasFeatureFreeTrials("equation", false);
   const convExhausted = !hasFeatureFreeTrials("converter", false);
@@ -170,7 +200,7 @@ export function formatTrialTimeRemaining(featureKey: string = "graph"): string {
   const remaining = getFeatureRemainingTrials(featureKey, false);
   const maxTrials = getMaxFeatureTrials(featureKey);
   if (remaining === 0 || remaining === Infinity) return `Trial Used (${maxTrials}/${maxTrials})`;
-  return `${remaining} Free Trial ${remaining === 1 ? "Use" : "Uses"} Left`;
+  return `${remaining} Free Trial ${remaining === 1 ? "Use" : "Uses"} Left (24h Window)`;
 }
 
 export function resetAllFeatureTrials(): void {
@@ -179,6 +209,7 @@ export function resetAllFeatureTrials(): void {
     localStorage.removeItem("force_trial_lock");
     ALL_FEATURE_KEYS.forEach((k) => {
       localStorage.removeItem(`${FEATURE_TRIAL_PREFIX}${k}`);
+      localStorage.removeItem(`${TRIAL_TIMESTAMP_PREFIX}${k}`);
       removeCookieTrialCount(k);
     });
     window.dispatchEvent(new Event("nume:feature-trial-used"));
@@ -202,7 +233,6 @@ export function exhaustAllFeatureTrials(): void {
   }
 }
 
-// Deprecated active day helpers preserved for clean imports
 export function recordActiveDay(): void {}
 export function saveFirstOpenTimestamp(_ts: number): void {}
 export function getFirstOpenTimestamp(): number { return Date.now(); }

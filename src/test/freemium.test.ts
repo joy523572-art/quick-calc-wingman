@@ -21,10 +21,10 @@ describe("Permanently Unlocked & Free Trial Uses Access", () => {
     expect(canAccessPremiumFeature(feature, true)).toBe(true);
   });
 
-  it("grants 4 free trial uses for converter and 2 for other premium features while keeping scientific calculator unlimited", () => {
+  it("grants 4 free trial uses for converter and 3 for other premium features while keeping scientific calculator unlimited", () => {
     expect(getMaxFeatureTrials("converter")).toBe(4);
-    expect(getMaxFeatureTrials("graph")).toBe(2);
-    expect(getMaxFeatureTrials("equation")).toBe(2);
+    expect(getMaxFeatureTrials("graph")).toBe(3);
+    expect(getMaxFeatureTrials("equation")).toBe(3);
 
     // 0 uses: allowed
     expect(canAccessPremiumFeature("calculator", false)).toBe(true);
@@ -43,7 +43,7 @@ describe("Permanently Unlocked & Free Trial Uses Access", () => {
     // Calculator remains permanently free and unlimited!
     expect(canAccessPremiumFeature("calculator", false)).toBe(true);
 
-    // Unlocked once Lifetime PRO is purchased
+    // Unlocked once PRO is active
     expect(canAccessPremiumFeature("converter", true)).toBe(true);
   });
 });
