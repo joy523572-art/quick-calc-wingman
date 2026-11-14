@@ -112,7 +112,7 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
         return;
       }
 
-      // History saving is premium-only (2 free trial uses); calculating stays unlimited for everyone.
+      // History saving allows 3 free lifetime trial uses; calculating stays unlimited for everyone.
       if (canSaveHistory(isPro)) {
         if (!isPro) {
           consumeFeatureTrial("history");
@@ -206,9 +206,8 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
       <div className="flex items-center justify-between px-1">
         <div className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
           <span>Scientific Computing</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
-            Unlimited Free
-          </span>
+          <span className="text-muted-foreground/50">·</span>
+          <span className="text-primary font-bold">Unlimited Free</span>
         </div>
         <div className="flex items-center gap-1">
           {isHistoryLocked ? (
@@ -216,9 +215,9 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
               variant="outline"
               size="sm"
               onClick={() => onRequestUpgrade?.("Calculation History")}
-              className="h-8 gap-1.5 text-xs rounded-xl hover:bg-muted active:scale-95 transition cursor-pointer"
-              aria-label="History (Requires Premium)"
-              title="Calculation history requires Lifetime Premium"
+              className="h-9 min-h-[36px] gap-1.5 text-xs rounded-xl hover:bg-muted active:scale-95 transition cursor-pointer"
+              aria-label="History (Requires Subscription)"
+              title="Calculation history free trials used — subscribe to unlock"
             >
               <Lock className="h-3.5 w-3.5 text-amber-500" />
               <span>History</span>

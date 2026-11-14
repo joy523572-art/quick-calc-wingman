@@ -122,13 +122,17 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
           </span>
         </div>
 
-        <div className="space-y-1.5">
+        <div
+          onClick={() => locked && onRequestUpgrade("Equation Solver")}
+          className="space-y-1.5"
+        >
           <Textarea
             aria-label="Equation"
             value={inputEq}
             maxLength={4000}
-            disabled={locked}
+            readOnly={locked}
             onChange={(e) => {
+              if (locked) return;
               setInputEq(e.target.value);
               if (errorMsg) setErrorMsg(null);
             }}
@@ -162,7 +166,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
               </>
             ) : locked ? (
               <>
-                <Lock className="w-4 h-4" /> Premium
+                <Lock className="w-4 h-4" /> Unlock All Features
               </>
             ) : (
               <>

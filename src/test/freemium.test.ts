@@ -1,49 +1,93 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { canSaveHistory, canAccessPremiumFeature, PREMIUM_FEATURES, UNLOCKED_FREE_FEATURES } from "@/lib/freemium";
-import { consumeFeatureTrial, resetAllFeatureTrials, exhaustAllFeatureTrials, getMaxFeatureTrials } from "@/lib/trialManager";
+import {
+  canSaveHistory,
+  canToggleNetwork,
+  canAccessPremiumFeature,
+  PREMIUM_FEATURES,
+  UNLOCKED_FREE_FEATURES,
+} from "@/lib/freemium";
+import {
+  consumeFeatureTrial,
+  resetAllFeatureTrials,
+  exhaustAllFeatureTrials,
+  getMaxFeatureTrials,
+  getFeatureTrialCount,
+} from "@/lib/trialManager";
 
-describe("Permanently Unlocked & Free Trial Uses Access", () => {
+describe("Permanently Unlocked & Lifetime Trial Access", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
     resetAllFeatureTrials();
   });
 
-  it.each(UNLOCKED_FREE_FEATURES)("permanently unlocks %s for all users at all times without limits", (feature) => {
+  it.each(UNLOCKED_FREE_FEATURES)(
+    "permanently unlocks %s for all users at all times without limits",
+    (feature) => {
+      exhaustAllFeatureTrials();
+      expect(canAccessPremiumFeature(feature, false)).toBe(true);
+      expect(canAccessPremiumFeature(feature, true)).toBe(true);
+    }
+  );
+
+  it("never locks Online/Offline toggle", () => {
     exhaustAllFeatureTrials();
-    expect(canAccessPremiumFeature(feature, false)).toBe(true);
-    expect(canAccessPremiumFeature(feature, true)).toBe(true);
+    expect(canToggleNetwork()).toBe(true);
+    expect(canAccessPremiumFeature("network", false)).toBe(true);
   });
 
-  it.each(PREMIUM_FEATURES)("requires Lifetime PRO for %s after free trial uses are exhausted", (feature) => {
-    exhaustAllFeatureTrials();
-    expect(canAccessPremiumFeature(feature, false)).toBe(false);
-    expect(canAccessPremiumFeature(feature, true)).toBe(true);
-  });
+  it.each(PREMIUM_FEATURES)(
+    "locks %s after free lifetime trials are exhausted unless subscribed",
+    (feature) => {
+      exhaustAllFeatureTrials();
+      expect(canAccessPremiumFeature(feature, false)).toBe(false);
+      expect(canAccessPremiumFeature(feature, true)).toBe(true);
+    }
+  );
 
-  it("grants 4 free trial uses for converter and 3 for other premium features while keeping scientific calculator unlimited", () => {
+  it("grants 4 free lifetime trials for converter and 3 for other features while keeping calculator unlimited", () => {
     expect(getMaxFeatureTrials("converter")).toBe(4);
     expect(getMaxFeatureTrials("graph")).toBe(3);
     expect(getMaxFeatureTrials("equation")).toBe(3);
+    expect(getMaxFeatureTrials("history")).toBe(3);
 
-    // 0 uses: allowed
     expect(canAccessPremiumFeature("calculator", false)).toBe(true);
     expect(canAccessPremiumFeature("converter", false)).toBe(true);
+    expect(canSaveHistory(false)).toBe(true);
 
-    // Use converter 3 times (3/4): still allowed
+    // 3 converter uses: still unlocked (3/4)
     consumeFeatureTrial("converter");
     consumeFeatureTrial("converter");
     consumeFeatureTrial("converter");
     expect(canAccessPremiumFeature("converter", false)).toBe(true);
 
-    // Use converter 4th time (4/4): locked
+    // 4th converter use: exhausted (4/4)
     consumeFeatureTrial("converter");
     expect(canAccessPremiumFeature("converter", false)).toBe(false);
 
-    // Calculator remains permanently free and unlimited!
-    expect(canAccessPremiumFeature("calculator", false)).toBe(true);
+    // 3 graph uses: exhausted (3/3)
+    consumeFeatureTrial("graph");
+    consumeFeatureTrial("graph");
+    expect(canAccessPremiumFeature("graph", false)).toBe(true);
+    consumeFeatureTrial("graph");
+    expect(canAccessPremiumFeature("graph", false)).toBe(false);
 
-    // Unlocked once PRO is active
+    // Calculator and network remain permanently free
+    expect(canAccessPremiumFeature("calculator", false)).toBe(true);
+    expect(canAccessPremiumFeature("network", false)).toBe(true);
+
+    // Subscribed users regain full access
     expect(canAccessPremiumFeature("converter", true)).toBe(true);
+    expect(canAccessPremiumFeature("graph", true)).toBe(true);
+  });
+
+  it("does not expire or reset trial counts based on 24h or 3-day timestamps", () => {
+    consumeFeatureTrial("graph");
+    consumeFeatureTrial("graph");
+    consumeFeatureTrial("graph");
+    // Simulate legacy timestamp from days ago
+    localStorage.setItem("nume.trial_timestamp.graph", String(Date.now() - 5 * 24 * 60 * 60 * 1000));
+    expect(getFeatureTrialCount("graph")).toBe(3);
+    expect(canAccessPremiumFeature("graph", false)).toBe(false);
   });
 });

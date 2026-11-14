@@ -7,8 +7,21 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Check, Sparkles, Lock, RefreshCw, AlertCircle, ShieldAlert, CheckCircle2 } from "lucide-react";
-import { isPlayBillingAvailable, SUBSCRIPTIONS, SubscriptionPlan } from "@/lib/playBilling";
+import {
+  Check,
+  Sparkles,
+  Lock,
+  RefreshCw,
+  AlertCircle,
+  ShieldAlert,
+  CheckCircle2,
+} from "lucide-react";
+import {
+  isPlayBillingAvailable,
+  SUBSCRIPTIONS,
+  SUBSCRIPTION_TAG,
+  SubscriptionPlan,
+} from "@/lib/playBilling";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -16,6 +29,7 @@ interface UpgradeModalProps {
   featureTrigger?: string;
   isPro: boolean;
   isBlocked?: boolean;
+  plans?: SubscriptionPlan[];
   onPurchase: (productId: string, basePlanId: string) => Promise<boolean>;
   onRestore: () => Promise<boolean>;
   onSubscriptionResult?: (success: boolean, planId: string, error?: string) => void;
@@ -27,11 +41,20 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   featureTrigger,
   isPro,
   isBlocked = false,
+  plans,
   onPurchase,
   onRestore,
   onSubscriptionResult,
 }) => {
-  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>(SUBSCRIPTIONS[0]);
+  const availablePlans = plans && plans.length > 0 ? plans : SUBSCRIPTIONS;
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(
+    () => availablePlans[0]?.id || "premium_monthly"
+  );
+
+  const selectedPlan =
+    availablePlans.find((p) => p.id === selectedPlanId || p.productId === selectedPlanId) ||
+    availablePlans[0];
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -43,7 +66,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     try {
       const ok = await onPurchase(selectedPlan.productId, selectedPlan.basePlanId);
       if (ok) {
-        setSuccessMsg(`Subscription to ${selectedPlan.cadence} confirmed via Google Play!`);
+        setSuccessMsg(`${selectedPlan.title} confirmed via Google Play.`);
         onSubscriptionResult?.(true, selectedPlan.id);
         setTimeout(() => {
           onOpenChange(false);
@@ -71,16 +94,16 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     try {
       const active = await onRestore();
       if (active) {
-        setSuccessMsg("PRO subscription restored successfully from Google Play!");
+        setSuccessMsg("Subscription restored successfully from Google Play.");
         onSubscriptionResult?.(true, "restored");
         setTimeout(() => onOpenChange(false), 1200);
       } else {
-        const msg = "No active PRO subscription found in Google Play for this account.";
+        const msg = "No active subscription found in Google Play for this account.";
         setErrorMsg(msg);
         onSubscriptionResult?.(false, "Restore", msg);
       }
     } catch {
-      const msg = "Google Play subscription verification completed.";
+      const msg = "Unable to verify Google Play subscription right now.";
       setErrorMsg(msg);
       onSubscriptionResult?.(false, "Restore", msg);
     } finally {
@@ -88,47 +111,47 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     }
   };
 
-  const handleOpenChangeInternal = (newOpen: boolean) => {
-    onOpenChange(newOpen);
-  };
-
   const playAvailable = isPlayBillingAvailable();
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChangeInternal}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md rounded-3xl p-6 bg-card border border-border shadow-2xl">
         <DialogHeader className="text-center space-y-2">
-          <div
-            className={`mx-auto w-12 h-12 rounded-2xl flex items-center justify-center ${
-              isBlocked && !isPro
-                ? "bg-amber-500/10 text-amber-500"
-                : "bg-primary/10 text-primary"
-            }`}
-          >
-            {isBlocked && !isPro ? (
-              <ShieldAlert className="w-6 h-6" />
-            ) : (
-              <Sparkles className="w-6 h-6" />
-            )}
+          <div className="mx-auto flex flex-col items-center gap-2">
+            <div
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                isBlocked && !isPro
+                  ? "bg-amber-500/10 text-amber-500"
+                  : "bg-primary/10 text-primary"
+              }`}
+            >
+              {isBlocked && !isPro ? (
+                <ShieldAlert className="w-6 h-6" />
+              ) : (
+                <Sparkles className="w-6 h-6" />
+              )}
+            </div>
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-primary">
+              {SUBSCRIPTION_TAG}
+            </span>
           </div>
+
           <DialogTitle className="text-xl font-bold text-foreground">
             {isBlocked && !isPro
-              ? "Free Trial Uses Reached"
-              : featureTrigger
+              ? "Free Trial Uses Complete"
+              : featureTrigger && featureTrigger !== SUBSCRIPTION_TAG
               ? `Unlock ${featureTrigger}`
-              : "Unlock All Features"}
+              : SUBSCRIPTION_TAG}
           </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            {isBlocked && !isPro
-              ? "You have used your 3 free lifetime trials for this advanced feature. Subscribe to unlock all features without limits."
-              : featureTrigger
-              ? `Your free trial uses for ${featureTrigger} are complete. Unlock All Features to keep using all tools forever.`
-              : "Choose a subscription plan via Google Play In-App Billing for unlimited access to all calculator features."}
+          <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+            {featureTrigger && featureTrigger !== SUBSCRIPTION_TAG
+              ? `Subscribe for unlimited access to ${featureTrigger} and all advanced tools.`
+              : "Choose a subscription plan below for unlimited access to Graphing, Equation Solver, Converter, History, and PDF Export."}
           </DialogDescription>
         </DialogHeader>
 
         {errorMsg && (
-          <div className="p-3.5 rounded-2xl bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-start gap-2.5">
+          <div className="p-3.5 rounded-2xl bg-destructive/10 text-xs text-destructive flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
             <div className="space-y-0.5">
               <span className="font-semibold block">Google Play Notice</span>
@@ -138,42 +161,52 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         )}
 
         {successMsg && (
-          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-500 flex items-start gap-2">
+          <div className="p-3.5 rounded-2xl bg-emerald-500/10 text-xs text-emerald-600 dark:text-emerald-400 flex items-start gap-2">
             <Check className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{successMsg}</span>
+            <span className="font-medium">{successMsg}</span>
           </div>
         )}
 
-        {/* Subscription Plan Selection Cards */}
-        <div className="grid grid-cols-2 gap-3 my-2">
-          {SUBSCRIPTIONS.map((plan) => {
+        {/* Subscription Tier Selection Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 my-1">
+          {availablePlans.map((plan) => {
             const isSelected = selectedPlan.id === plan.id;
+            const isMonthly = plan.id === "premium_monthly";
             return (
               <button
                 key={plan.id}
                 type="button"
-                onClick={() => setSelectedPlan(plan)}
-                className={`p-3.5 rounded-2xl border text-left transition relative flex flex-col justify-between ${
+                onClick={() => setSelectedPlanId(plan.id)}
+                className={`min-h-[124px] p-4 rounded-2xl border text-left transition relative flex flex-col justify-between cursor-pointer ${
                   isSelected
                     ? "border-primary bg-primary/5 ring-2 ring-primary"
-                    : "border-border bg-card hover:border-primary/50"
+                    : "border-border bg-background/60 hover:border-primary/50"
                 }`}
               >
-                {isSelected && (
-                  <span className="absolute -top-2 right-3 px-2 py-0.5 rounded-full text-[9px] font-bold bg-primary text-primary-foreground uppercase tracking-wider">
-                    Selected
-                  </span>
-                )}
-                <div>
-                  <div className="text-xs font-semibold text-muted-foreground">
-                    {plan.id === "premium_monthly" ? "Monthly Plan" : "Weekly Plan"}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-foreground">
+                      {plan.title}
+                    </span>
                   </div>
-                  <div className="text-xl font-black text-foreground mt-0.5">{plan.price}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{plan.cadence}</div>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-2xl font-black text-foreground">
+                      {plan.formattedPrice}
+                    </span>
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {isMonthly ? "/ month" : "/ week"}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {isMonthly ? "Best value · Auto-renews monthly" : "Flexible · Auto-renews weekly"}
+                  </div>
                 </div>
-                <div className="mt-3 flex items-center gap-1 text-[11px] font-bold text-primary">
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${isSelected ? "opacity-100" : "opacity-40"}`} />
-                  <span>{isSelected ? "Selected" : "Select"}</span>
+
+                <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-primary">
+                  <CheckCircle2
+                    className={`w-4 h-4 ${isSelected ? "opacity-100" : "opacity-35"}`}
+                  />
+                  <span>{isSelected ? "Selected Plan" : "Choose Plan"}</span>
                 </div>
               </button>
             );
@@ -181,37 +214,33 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         </div>
 
         {!playAvailable && (
-          <div className="p-3 rounded-xl bg-muted/60 border border-border text-[11px] text-muted-foreground leading-relaxed">
-            Google Play In-App Billing activates automatically when opening this app from your installed Android app via the Google Play Store.
+          <div className="p-3 rounded-2xl bg-muted/60 text-[11px] text-muted-foreground leading-relaxed">
+            Google Play In-App Billing completes checkout inside the installed Android app. Outside Android, checkout requests are dispatched to the native wrapper interface.
           </div>
         )}
 
-        {/* Features Checklist */}
-        <div className="space-y-1.5 py-1 text-xs text-foreground/80">
+        {/* Included Features */}
+        <div className="space-y-2 py-1 text-xs text-foreground/85">
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>Unlock All Features (Graphing, Solver, History)</span>
+            <span>Unlimited 2D Graphing & Algebraic Equation Solver</span>
           </div>
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>Full worldwide Currency & Unit Converter</span>
+            <span>Unlimited Unit & Worldwide Currency Converter</span>
           </div>
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>Calculation history & PDF report exports</span>
-          </div>
-          <div className="flex items-center gap-2 font-semibold text-primary">
-            <Check className="w-4 h-4 text-primary shrink-0" />
-            <span>Verified via Google Digital Goods API.</span>
+            <span>Unlimited Calculation History & PDF Report Exports</span>
           </div>
         </div>
 
-        {/* Action Button */}
-        <div className="space-y-2 pt-1">
+        {/* Checkout & Restore Actions */}
+        <div className="space-y-2.5 pt-1">
           <Button
             onClick={handleBuy}
             disabled={loading || isPro}
-            className="w-full h-11 rounded-xl font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-2"
+            className="w-full min-h-[48px] h-12 rounded-xl font-bold bg-primary hover:bg-primary/90 text-primary-foreground gap-2 cursor-pointer"
           >
             {isPro ? (
               <>
@@ -226,21 +255,24 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             ) : (
               <>
                 <Lock className="w-4 h-4" />
-                Unlock All Features ({selectedPlan.price})
+                {SUBSCRIPTION_TAG} · {selectedPlan.formattedPrice}
+                {selectedPlan.id === "premium_monthly" ? "/mo" : "/wk"}
               </>
             )}
           </Button>
 
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground pt-0.5">
             <button
               type="button"
               onClick={handleRestore}
               disabled={loading}
-              className="hover:underline text-muted-foreground hover:text-foreground font-medium"
+              className="min-h-[44px] px-1 hover:underline text-muted-foreground hover:text-foreground font-medium cursor-pointer"
             >
               Restore Subscription
             </button>
-            <span className="text-[10px] text-muted-foreground">Google Play Billing</span>
+            <span className="text-[11px] text-muted-foreground">
+              Cancel anytime in Google Play
+            </span>
           </div>
         </div>
       </DialogContent>

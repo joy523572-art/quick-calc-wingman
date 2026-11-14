@@ -1,33 +1,125 @@
-export const PLAY_BILLING_URL = "https://play.google.com/billing";
+import {
+  clearLocalSubscriptionMetadata,
+  computeSubscriptionExpiresAt,
+  ProfileSubscriptionRecord,
+  readLocalSubscriptionMetadata,
+  syncSubscriptionToProfile,
+} from "./subscriptionSync";
 
-export const WEEKLY_PRODUCT = {
+export const PLAY_BILLING_URL = "https://play.google.com/billing";
+export const SUBSCRIPTION_TAG = "Unlock All Features";
+export const PLAY_PACKAGE_NAME = "scientific.calculator.cm";
+export const PLAY_MANAGE_SUBSCRIPTIONS_URL = `https://play.google.com/store/account/subscriptions?package=${PLAY_PACKAGE_NAME}`;
+
+export const PRODUCT_DETAILS_CACHE_KEY = "nume.product_details.v2";
+export const PRODUCT_DETAILS_UPDATED_EVENT = "nume:product-details-updated";
+
+export interface SubscriptionPlan {
+  id: string;
+  productId: string;
+  basePlanId: string;
+  title: string;
+  formattedPrice: string; // e.g. "₦1,500", "₦500", "$6.00", "$3.00"
+  price?: string; // backwards-compatible alias for formattedPrice
+  shortPrice?: string; // backwards-compatible alias
+  priceCurrencyCode?: string;
+  priceAmountMicros?: number;
+  cadence: string;
+}
+
+export const WEEKLY_PRODUCT: SubscriptionPlan = {
   id: "premium_weekly",
   productId: "premium_weekly",
   basePlanId: "weekly-autorenewal",
+  title: "Weekly Subscription",
+  formattedPrice: "$3.00",
   price: "$3.00",
+  shortPrice: "$3.00",
   cadence: "Weekly Reoccurring Subscription",
-} as const;
+};
 
-export const MONTHLY_PRODUCT = {
+export const MONTHLY_PRODUCT: SubscriptionPlan = {
   id: "premium_monthly",
   productId: "premium_monthly",
   basePlanId: "monthly-autorewal",
+  title: "Monthly Subscription",
+  formattedPrice: "$6.00",
   price: "$6.00",
+  shortPrice: "$6.00",
   cadence: "Monthly Reoccurring Subscription",
-} as const;
+};
 
-export const SUBSCRIPTIONS = [WEEKLY_PRODUCT, MONTHLY_PRODUCT] as const;
+export const SUBSCRIPTIONS: SubscriptionPlan[] = [MONTHLY_PRODUCT, WEEKLY_PRODUCT];
 
-export type SubscriptionPlan = (typeof SUBSCRIPTIONS)[number];
+export function getCachedProductPlans(): SubscriptionPlan[] {
+  if (typeof window === "undefined") {
+    return [MONTHLY_PRODUCT, WEEKLY_PRODUCT];
+  }
+  try {
+    const raw = localStorage.getItem(PRODUCT_DETAILS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return [MONTHLY_PRODUCT, WEEKLY_PRODUCT];
+}
 
-type PlayItemDetails = {
-  itemId: string;
+export function saveCachedProductPlans(plans: SubscriptionPlan[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(PRODUCT_DETAILS_CACHE_KEY, JSON.stringify(plans));
+  } catch {
+    // ignore
+  }
+}
+
+export type PlayItemDetails = {
+  itemId?: string;
+  productId?: string;
   title?: string;
   description?: string;
   price?: { currency: string; value: string };
+  formattedPrice?: string;
+  subscriptionOfferDetails?: Array<{
+    pricingPhases?: {
+      pricingPhaseList?: Array<{
+        formattedPrice?: string;
+        priceAmountMicros?: number;
+        priceCurrencyCode?: string;
+      }>;
+    };
+  }>;
+  oneTimePurchaseOfferDetails?: {
+    formattedPrice?: string;
+    priceAmountMicros?: number;
+    priceCurrencyCode?: string;
+  };
 };
 
-type PlayPurchase = { itemId: string; purchaseToken: string; acknowledgeState?: string };
+export type PlayPurchase = {
+  itemId: string;
+  purchaseToken: string;
+  acknowledgeState?: "acknowledged" | "unacknowledged" | string;
+  purchaseState?: string | number;
+  isAcknowledged?: boolean;
+};
+
+export type NativeSubscriptionPayload = {
+  isSubscribed?: boolean;
+  isPro?: boolean;
+  isPremium?: boolean;
+  productId?: string;
+  tier?: string;
+  purchaseToken?: string;
+  expiresAt?: string;
+  purchaseState?: string | number;
+  isAcknowledged?: boolean;
+};
 
 export type DigitalGoodsService = {
   getDetails: (itemIds: string[]) => Promise<PlayItemDetails[]>;
@@ -36,12 +128,59 @@ export type DigitalGoodsService = {
   acknowledge?: (purchaseToken: string) => Promise<void>;
 };
 
+export type NativeAndroidBillingBridge = {
+  triggerPurchase?: (productId: string, basePlanId: string) => boolean | Promise<boolean> | void;
+  purchase?: (productId: string, basePlanId: string) => boolean | Promise<boolean> | void;
+  acknowledgePurchase?: (purchaseToken: string) => boolean | Promise<boolean> | void;
+  queryPurchases?: () => void | Promise<PlayPurchase[]>;
+  queryProductDetailsAsync?: () => Promise<PlayItemDetails[] | unknown>;
+  getProductDetails?: () => Promise<PlayItemDetails[] | unknown>;
+  openSubscriptionManagement?: () => void;
+};
+
 declare global {
   interface Window {
     getDigitalGoodsService?: (provider: string) => Promise<DigitalGoodsService>;
-    triggerPurchase?: (productId: string, basePlanId: string) => Promise<boolean>;
-    updateSubscriptionUI?: (isPro: boolean) => void;
+    AndroidBilling?: NativeAndroidBillingBridge;
+    Android?: NativeAndroidBillingBridge;
+    triggerPurchase?: (productId: string, basePlanId?: string) => Promise<boolean>;
+    updateSubscriptionUI?: (payloadOrIsPro: boolean | NativeSubscriptionPayload) => void;
+    onPurchasesUpdated?: (purchases: PlayPurchase | PlayPurchase[]) => Promise<void>;
+    updateProductDetails?: (details: unknown) => void;
+    setProductDetails?: (details: unknown) => void;
+    queryProductDetailsAsync?: () => Promise<SubscriptionPlan[]>;
   }
+}
+
+export const SUBSCRIPTION_UPDATED_EVENT = "nume:subscription-updated";
+export const TRIGGER_PURCHASE_EVENT = "nume:trigger-purchase";
+
+const VALID_PRODUCT_IDS = new Set(["premium_weekly", "premium_monthly"]);
+
+function isValidSubscriptionItem(itemId?: string): boolean {
+  if (!itemId) return false;
+  const normalized = itemId.toLowerCase();
+  return (
+    VALID_PRODUCT_IDS.has(normalized) ||
+    normalized === "premium_weekly" ||
+    normalized === "premium_monthly"
+  );
+}
+
+function isPurchaseStatePurchased(state?: string | number): boolean {
+  if (state === undefined || state === null) return true; // Digital Goods listPurchases returns active owned purchases
+  if (typeof state === "number") return state === 1; // Google Play Billing PurchaseState.PURCHASED = 1
+  return state.toUpperCase() === "PURCHASED";
+}
+
+function isPurchaseAlreadyAcknowledged(purchase: PlayPurchase): boolean {
+  if (typeof purchase.isAcknowledged === "boolean") {
+    return purchase.isAcknowledged;
+  }
+  if (typeof purchase.acknowledgeState === "string") {
+    return purchase.acknowledgeState.toLowerCase() === "acknowledged";
+  }
+  return false;
 }
 
 export const isPlayBillingAvailable = (): boolean =>
@@ -56,85 +195,374 @@ export async function getPlayBillingService(): Promise<DigitalGoodsService | nul
   try {
     return await window.getDigitalGoodsService(PLAY_BILLING_URL);
   } catch (err) {
-    console.warn("Google Play billing service could not be initialized:", err);
+    console.warn("[PlayBilling] Google Play billing service could not be initialized:", err);
     return null;
   }
 }
 
-export async function getSubscriptionDetails(): Promise<PlayItemDetails[] | null> {
+/**
+ * Parses raw product details from Android queryProductDetailsAsync or Digital Goods getDetails
+ * and updates local cache & dispatches event.
+ */
+export function parseAndApplyProductDetails(rawList: unknown): SubscriptionPlan[] {
+  if (!rawList) return getCachedProductPlans();
+
+  let list: unknown[] = [];
+  if (Array.isArray(rawList)) {
+    list = rawList;
+  } else if (typeof rawList === "object" && rawList !== null) {
+    list = Object.values(rawList as Record<string, unknown>);
+  }
+
+  const currentPlans = getCachedProductPlans();
+  const updatedPlans = currentPlans.map((plan) => {
+    const match = list.find((item) => {
+      if (!item || typeof item !== "object") return false;
+      const rec = item as Record<string, unknown>;
+      const id = String(rec.productId || rec.itemId || rec.id || "").toLowerCase();
+      return id === plan.productId.toLowerCase() || id === plan.id.toLowerCase();
+    }) as Record<string, unknown> | undefined;
+
+    if (!match) return plan;
+
+    let formattedPrice = plan.formattedPrice;
+    let priceAmountMicros = plan.priceAmountMicros;
+    let priceCurrencyCode = plan.priceCurrencyCode;
+
+    // Direct formattedPrice (e.g. from Android wrapper or formatted payload)
+    if (typeof match.formattedPrice === "string" && match.formattedPrice.trim()) {
+      formattedPrice = match.formattedPrice.trim();
+    }
+    // SubscriptionOfferDetails from Google Play Billing queryProductDetailsAsync
+    else if (Array.isArray(match.subscriptionOfferDetails) && match.subscriptionOfferDetails.length > 0) {
+      const firstOffer = match.subscriptionOfferDetails[0] as Record<string, unknown>;
+      const pricingPhases = firstOffer?.pricingPhases as Record<string, unknown> | undefined;
+      const phasesList = pricingPhases?.pricingPhaseList as Array<Record<string, unknown>> | undefined;
+      const firstPhase = phasesList?.[0];
+      if (typeof firstPhase?.formattedPrice === "string" && firstPhase.formattedPrice.trim()) {
+        formattedPrice = firstPhase.formattedPrice.trim();
+      }
+      if (typeof firstPhase?.priceAmountMicros === "number") {
+        priceAmountMicros = firstPhase.priceAmountMicros;
+      }
+      if (typeof firstPhase?.priceCurrencyCode === "string") {
+        priceCurrencyCode = firstPhase.priceCurrencyCode;
+      }
+    }
+    // OneTimePurchaseOfferDetails
+    else if (match.oneTimePurchaseOfferDetails && typeof match.oneTimePurchaseOfferDetails === "object") {
+      const otp = match.oneTimePurchaseOfferDetails as Record<string, unknown>;
+      if (typeof otp.formattedPrice === "string" && otp.formattedPrice.trim()) {
+        formattedPrice = otp.formattedPrice.trim();
+      }
+      if (typeof otp.priceAmountMicros === "number") {
+        priceAmountMicros = otp.priceAmountMicros;
+      }
+      if (typeof otp.priceCurrencyCode === "string") {
+        priceCurrencyCode = otp.priceCurrencyCode;
+      }
+    }
+    // Digital Goods price: { currency, value }
+    else if (match.price && typeof match.price === "object") {
+      const p = match.price as Record<string, unknown>;
+      const cur = String(p.currency || "");
+      const val = Number(p.value);
+      if (cur && !isNaN(val)) {
+        try {
+          formattedPrice = new Intl.NumberFormat(undefined, {
+            style: "currency",
+            currency: cur,
+          }).format(val);
+        } catch {
+          formattedPrice = `${cur} ${val}`;
+        }
+        priceCurrencyCode = cur;
+      }
+    }
+
+    return {
+      ...plan,
+      formattedPrice,
+      price: formattedPrice,
+      shortPrice: formattedPrice,
+      priceAmountMicros,
+      priceCurrencyCode,
+    };
+  });
+
+  saveCachedProductPlans(updatedPlans);
+
+  // Keep static exported array synchronized
+  if (updatedPlans[0]) Object.assign(MONTHLY_PRODUCT, updatedPlans[0]);
+  if (updatedPlans[1]) Object.assign(WEEKLY_PRODUCT, updatedPlans[1]);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(PRODUCT_DETAILS_UPDATED_EVENT, { detail: updatedPlans })
+    );
+  }
+
+  return updatedPlans;
+}
+
+/**
+ * Queries Google Play Billing for product details (prices, currency) using queryProductDetailsAsync
+ * or Digital Goods getDetails. Returns localized formattedPrice for countries like Nigeria (₦500 / ₦1500)
+ * or defaults for other countries.
+ */
+export async function queryProductDetailsAsync(): Promise<SubscriptionPlan[]> {
+  // 1. Check native Android wrapper bridge
+  const bridge = typeof window !== "undefined" ? (window.AndroidBilling ?? window.Android) : undefined;
+  if (bridge) {
+    if (typeof bridge.queryProductDetailsAsync === "function") {
+      try {
+        const nativeDetails = await bridge.queryProductDetailsAsync();
+        if (nativeDetails) {
+          return parseAndApplyProductDetails(nativeDetails);
+        }
+      } catch (err) {
+        console.warn("[PlayBilling] Error in AndroidBilling.queryProductDetailsAsync:", err);
+      }
+    }
+    if (typeof bridge.getProductDetails === "function") {
+      try {
+        const nativeDetails = await bridge.getProductDetails();
+        if (nativeDetails) {
+          return parseAndApplyProductDetails(nativeDetails);
+        }
+      } catch (err) {
+        console.warn("[PlayBilling] Error in AndroidBilling.getProductDetails:", err);
+      }
+    }
+  }
+
+  // 2. Check Digital Goods API
+  if (isPlayBillingAvailable()) {
+    try {
+      const details = await getSubscriptionDetails();
+      if (details && details.length > 0) {
+        return parseAndApplyProductDetails(details);
+      }
+    } catch (err) {
+      console.warn("[PlayBilling] Failed to query product details via Digital Goods:", err);
+    }
+  }
+
+  return getCachedProductPlans();
+}
+
+export const getSubscriptionDetails = async (): Promise<PlayItemDetails[] | null> => {
   const service = await getPlayBillingService();
   if (!service) return null;
   try {
-    return await service.getDetails(["premium_weekly", "premium_monthly"]);
+    return await service.getDetails(["premium_monthly", "premium_weekly"]);
   } catch (err) {
-    console.warn("Failed to get Google Play subscription details:", err);
+    console.warn("[PlayBilling] Failed to get Google Play subscription details:", err);
     return null;
+  }
+};
+
+/**
+ * Acknowledges an unacknowledged purchase token via Digital Goods API or native Android bridge,
+ * with explicit success and failure logs.
+ */
+export async function acknowledgePlayPurchase(
+  purchaseToken: string,
+  productId: string,
+  service?: DigitalGoodsService | null
+): Promise<boolean> {
+  if (!purchaseToken) {
+    console.warn("[PlayBilling] Acknowledge skipped: missing purchaseToken", { productId });
+    return false;
+  }
+
+  try {
+    const billing = service ?? (await getPlayBillingService());
+    if (billing && typeof billing.acknowledge === "function") {
+      await billing.acknowledge(purchaseToken);
+      console.info("[PlayBilling] Acknowledge success via DigitalGoodsService", {
+        productId,
+        tokenPrefix: purchaseToken.slice(0, 8),
+      });
+      return true;
+    }
+
+    const bridge = typeof window !== "undefined" ? (window.AndroidBilling ?? window.Android) : undefined;
+    if (bridge && typeof bridge.acknowledgePurchase === "function") {
+      await bridge.acknowledgePurchase(purchaseToken);
+      console.info("[PlayBilling] Acknowledge success via AndroidBilling bridge", {
+        productId,
+        tokenPrefix: purchaseToken.slice(0, 8),
+      });
+      return true;
+    }
+
+    console.info("[PlayBilling] Acknowledge not exposed on web DigitalGoodsService (handled by Play PaymentResponse.complete or native wrapper)", {
+      productId,
+      tokenPrefix: purchaseToken.slice(0, 8),
+    });
+    return true;
+  } catch (err) {
+    console.error("[PlayBilling] Acknowledge failure", {
+      productId,
+      tokenPrefix: purchaseToken.slice(0, 8),
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
   }
 }
 
+function persistGrantedSubscription(
+  productId: string,
+  purchaseToken?: string,
+  expiresAt?: string
+): ProfileSubscriptionRecord {
+  const normalizedTier =
+    productId === "premium_weekly" || productId === "premium_monthly"
+      ? productId
+      : "premium_monthly";
+  const resolvedExpiresAt = expiresAt || computeSubscriptionExpiresAt(normalizedTier);
+
+  try {
+    localStorage.setItem("billing_status", "active");
+    localStorage.setItem("billing_plan_id", normalizedTier);
+    localStorage.setItem("subscription_active", "true");
+    localStorage.setItem("isPremium", "true");
+    if (purchaseToken) {
+      localStorage.setItem("play_subscription_token", purchaseToken);
+    }
+  } catch {
+    // ignore storage access issues
+  }
+
+  const record: ProfileSubscriptionRecord = {
+    subscription_status: "active",
+    subscription_tier: normalizedTier,
+    subscription_expires_at: resolvedExpiresAt,
+  };
+
+  void syncSubscriptionToProfile(record);
+  return record;
+}
+
+function notifySubscriptionUpdated(isPro: boolean, record?: ProfileSubscriptionRecord): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(SUBSCRIPTION_UPDATED_EVENT, {
+      detail: {
+        isPro,
+        isSubscribed: isPro,
+        ...(record ?? readLocalSubscriptionMetadata()),
+      },
+    })
+  );
+}
+
+/**
+ * Grants subscription access when a verified Play Billing purchase arrives
+ * (either from Digital Goods API or native wrapper onPurchasesUpdated),
+ * and acknowledges the purchase if not yet acknowledged.
+ */
+export async function processVerifiedPlayPurchase(
+  purchase: PlayPurchase,
+  service?: DigitalGoodsService | null
+): Promise<boolean> {
+  if (!purchase.purchaseToken || !isPurchaseStatePurchased(purchase.purchaseState)) {
+    return false;
+  }
+
+  const productId = isValidSubscriptionItem(purchase.itemId)
+    ? purchase.itemId
+    : "premium_monthly";
+
+  const record = persistGrantedSubscription(productId, purchase.purchaseToken);
+
+  if (!isPurchaseAlreadyAcknowledged(purchase)) {
+    await acknowledgePlayPurchase(purchase.purchaseToken, productId, service);
+  }
+
+  notifySubscriptionUpdated(true, record);
+  return true;
+}
+
+/**
+ * Checks Google Play Digital Goods API for active subscriptions on app startup
+ * and acknowledges any unacknowledged PURCHASED items.
+ * If offline, uses saved subscription status from local storage (SharedPreferences) without calling Google Play Billing.
+ */
 export async function hasActivePlaySubscription(service?: DigitalGoodsService): Promise<boolean> {
+  const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+
+  const hasLocalActive =
+    typeof window !== "undefined" &&
+    (localStorage.getItem("isPremium") === "true" ||
+      localStorage.getItem("subscription_active") === "true" ||
+      localStorage.getItem("billing_status") === "active" ||
+      Boolean(localStorage.getItem("play_subscription_token")));
+
+  if (isOffline) {
+    return hasLocalActive;
+  }
+
   if (isPlayBillingAvailable()) {
     try {
       const billing = service ?? (await getPlayBillingService());
       if (billing && typeof billing.listPurchases === "function") {
         const purchases = await billing.listPurchases();
-        const hasActivePurchase = purchases.some((purchase) => {
-          if (!purchase.purchaseToken) return false;
-          const item = purchase.itemId?.toLowerCase() || "";
-          return (
-            item === "premium_weekly" ||
-            item === "premium_monthly" ||
-            item.includes("premium") ||
-            item.includes("weekly") ||
-            item.includes("monthly")
-          );
-        });
+        const activePurchase = purchases.find(
+          (purchase) =>
+            Boolean(purchase.purchaseToken) &&
+            isValidSubscriptionItem(purchase.itemId) &&
+            isPurchaseStatePurchased(purchase.purchaseState)
+        );
 
-        if (hasActivePurchase) {
-          try {
-            localStorage.setItem("billing_status", "active");
-            localStorage.setItem("billing_plan_id", "premium_monthly");
-            localStorage.setItem("subscription_active", "true");
-          } catch {
-            // ignore
-          }
+        if (activePurchase) {
+          await processVerifiedPlayPurchase(activePurchase, billing);
           return true;
         }
 
-        const verifiedPlayToken = localStorage.getItem("play_subscription_token");
-        if (verifiedPlayToken) {
+        if (hasLocalActive) {
           return true;
         }
 
-        localStorage.removeItem("billing_status");
-        localStorage.removeItem("billing_plan_id");
-        localStorage.removeItem("subscription_active");
+        resetPlaySubscription(false);
         return false;
       }
     } catch (e) {
-      console.warn("Error querying Google Play subscriptions:", e);
+      console.warn("[PlayBilling] Error querying Google Play subscriptions (falling back to saved local status):", e);
     }
   }
 
-  try {
-    if (typeof window !== "undefined") {
-      const verifiedPlayToken = localStorage.getItem("play_subscription_token");
-      if (verifiedPlayToken) {
-        return true;
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return false;
+  return hasLocalActive;
 }
 
 export async function buySubscription(
-  productId: string = "premium_weekly",
-  basePlanId: string = "weekly-autorenewal"
+  productId: string = "premium_monthly",
+  basePlanId: string = productId === "premium_weekly" ? "weekly-autorenewal" : "monthly-autorewal"
 ): Promise<{ success: boolean; receiptId: string; purchaseToken: string }> {
+  const nativeBridge =
+    typeof window !== "undefined" ? (window.AndroidBilling ?? window.Android) : undefined;
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(TRIGGER_PURCHASE_EVENT, {
+        detail: { productId, basePlanId },
+      })
+    );
+  }
+
   if (!isPlayBillingAvailable()) {
+    if (nativeBridge && (nativeBridge.triggerPurchase || nativeBridge.purchase)) {
+      const fn = nativeBridge.triggerPurchase || nativeBridge.purchase;
+      const handled = await Promise.resolve(fn?.(productId, basePlanId));
+      if (handled) {
+        return {
+          success: true,
+          receiptId: `GP-NATIVE-${productId.toUpperCase()}`,
+          purchaseToken: localStorage.getItem("play_subscription_token") || "native-pending",
+        };
+      }
+    }
     throw new Error(
       "Google Play Billing reoccurring subscriptions are available only when opened from your installed Android app via Google Play Store."
     );
@@ -142,22 +570,28 @@ export async function buySubscription(
 
   let response: PaymentResponse | null = null;
   try {
-    getSubscriptionDetails().catch(() => {});
+    const plans = getCachedProductPlans();
+    const matchedPlan = plans.find((p) => p.productId === productId || p.id === productId);
 
     const paymentMethods: PaymentMethodData[] = [
       {
         supportedMethods: PLAY_BILLING_URL,
         data: {
           sku: productId,
-          basePlanId: basePlanId,
+          basePlanId,
         },
       },
     ];
 
     const paymentDetails: PaymentDetailsInit = {
       total: {
-        label: productId === "premium_monthly" ? "Monthly Subscription $6" : "Weekly Subscription $3",
-        amount: { currency: "USD", value: productId === "premium_monthly" ? "6.00" : "3.00" },
+        label: matchedPlan?.title || (productId === "premium_monthly" ? "Monthly Subscription" : "Weekly Subscription"),
+        amount: {
+          currency: matchedPlan?.priceCurrencyCode || "USD",
+          value: matchedPlan?.priceAmountMicros
+            ? (matchedPlan.priceAmountMicros / 1000000).toFixed(2)
+            : productId === "premium_monthly" ? "6.00" : "3.00",
+        },
       },
     };
 
@@ -174,28 +608,27 @@ export async function buySubscription(
 
     response = await request.show();
 
-    const details = response.details as { purchaseToken?: string; token?: string } | undefined;
+    const details = response.details as
+      | { purchaseToken?: string; token?: string; isAcknowledged?: boolean }
+      | undefined;
     const purchaseToken = details?.purchaseToken || details?.token;
 
     if (!purchaseToken) {
       await response.complete("fail");
-      throw new Error("Google Play completed the payment flow but did not return a valid subscription purchase token.");
+      throw new Error(
+        "Google Play completed the payment flow but did not return a valid subscription purchase token."
+      );
     }
 
     await response.complete("success");
 
-    try {
-      localStorage.setItem("billing_status", "active");
-      localStorage.setItem("billing_plan_id", productId);
-      localStorage.setItem("subscription_active", "true");
-      localStorage.setItem("play_subscription_token", purchaseToken);
-    } catch {
-      // ignore
+    const record = persistGrantedSubscription(productId, purchaseToken);
+
+    if (details?.isAcknowledged === false) {
+      await acknowledgePlayPurchase(purchaseToken, productId);
     }
 
-    if (typeof window !== "undefined" && typeof window.updateSubscriptionUI === "function") {
-      window.updateSubscriptionUI(true);
-    }
+    notifySubscriptionUpdated(true, record);
 
     const receiptId = `GP-SUB-${purchaseToken.substring(0, 10).toUpperCase()}`;
     return {
@@ -222,37 +655,116 @@ export async function buySubscription(
       throw new Error("Subscription purchase was cancelled in Google Play.");
     }
 
-    const errMsg = errObj?.message || "Google Play subscription checkout could not be initiated.";
-    console.error("Google Play Subscription error:", error);
+    const errMsg =
+      errObj?.message || "Google Play subscription checkout could not be initiated.";
+    console.error("[PlayBilling] Subscription error:", error);
     throw new Error(
-      `Google Play Subscription: ${errMsg}. Please ensure '${productId}' is Active in Play Console and you are using an authorized test/purchaser account.`
+      `Google Play Subscription: ${errMsg}. Please ensure '${productId}' (${basePlanId}) is Active in Play Console and you are using an authorized account.`
     );
   }
 }
 
-// Bind window.triggerPurchase for native wrapper integration
-if (typeof window !== "undefined") {
-  window.triggerPurchase = async (productId: string, basePlanId: string): Promise<boolean> => {
-    try {
-      const result = await buySubscription(productId, basePlanId);
-      return result.success;
-    } catch (err) {
-      console.error("triggerPurchase error:", err);
-      return false;
-    }
-  };
-}
-
-export function resetPlaySubscription(): void {
+export function resetPlaySubscription(notify = true): void {
   try {
     localStorage.removeItem("billing_status");
     localStorage.removeItem("billing_plan_id");
     localStorage.removeItem("subscription_active");
+    localStorage.removeItem("isPremium");
     localStorage.removeItem("play_subscription_token");
-    if (typeof window !== "undefined" && typeof window.updateSubscriptionUI === "function") {
-      window.updateSubscriptionUI(false);
+    clearLocalSubscriptionMetadata();
+
+    void syncSubscriptionToProfile({
+      subscription_status: "inactive",
+      subscription_tier: null,
+      subscription_expires_at: null,
+    });
+
+    if (notify) {
+      notifySubscriptionUpdated(false, {
+        subscription_status: "inactive",
+        subscription_tier: null,
+        subscription_expires_at: null,
+      });
     }
   } catch {
     // ignore
   }
 }
+
+/**
+ * Registers clean JavaScript interfaces on window so the native Android wrapper
+ * can listen for checkout clicks (`window.triggerPurchase`) and push verified
+ * purchase updates (`window.updateSubscriptionUI`, `window.onPurchasesUpdated`).
+ */
+export function registerWindowBillingBridge(): void {
+  if (typeof window === "undefined") return;
+
+  window.triggerPurchase = async (
+    productId: string = "premium_monthly",
+    basePlanId: string = productId === "premium_weekly" ? "weekly-autorenewal" : "monthly-autorewal"
+  ): Promise<boolean> => {
+    try {
+      const result = await buySubscription(productId, basePlanId);
+      return result.success;
+    } catch (err) {
+      console.error("[PlayBilling] triggerPurchase error:", err);
+      return false;
+    }
+  };
+
+  window.updateSubscriptionUI = (payloadOrIsPro: boolean | NativeSubscriptionPayload): void => {
+    if (typeof payloadOrIsPro === "boolean") {
+      if (payloadOrIsPro) {
+        const current = readLocalSubscriptionMetadata();
+        const productId = current.subscription_tier || localStorage.getItem("billing_plan_id") || "premium_monthly";
+        const record = persistGrantedSubscription(productId, localStorage.getItem("play_subscription_token") || undefined, current.subscription_expires_at || undefined);
+        notifySubscriptionUpdated(true, record);
+      } else {
+        resetPlaySubscription(true);
+      }
+      return;
+    }
+
+    const isActive = Boolean(
+      payloadOrIsPro.isSubscribed ?? payloadOrIsPro.isPro ?? payloadOrIsPro.isPremium
+    );
+    if (isActive) {
+      const productId = payloadOrIsPro.productId || payloadOrIsPro.tier || "premium_monthly";
+      const record = persistGrantedSubscription(
+        productId,
+        payloadOrIsPro.purchaseToken,
+        payloadOrIsPro.expiresAt
+      );
+      if (payloadOrIsPro.purchaseToken && payloadOrIsPro.isAcknowledged === false) {
+        void acknowledgePlayPurchase(payloadOrIsPro.purchaseToken, productId);
+      }
+      notifySubscriptionUpdated(true, record);
+    } else {
+      resetPlaySubscription(true);
+    }
+  };
+
+  window.onPurchasesUpdated = async (
+    purchases: PlayPurchase | PlayPurchase[]
+  ): Promise<void> => {
+    const list = Array.isArray(purchases) ? purchases : [purchases];
+    let grantedAny = false;
+    for (const p of list) {
+      if (isPurchaseStatePurchased(p.purchaseState) && p.purchaseToken) {
+        const ok = await processVerifiedPlayPurchase(p);
+        if (ok) grantedAny = true;
+      }
+    }
+    if (!grantedAny) {
+      notifySubscriptionUpdated(false);
+    }
+  };
+
+  window.queryProductDetailsAsync = queryProductDetailsAsync;
+  window.updateProductDetails = (details: unknown) => {
+    parseAndApplyProductDetails(details);
+  };
+  window.setProductDetails = window.updateProductDetails;
+}
+
+registerWindowBillingBridge();

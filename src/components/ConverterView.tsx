@@ -160,36 +160,46 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         )}
       </div>
 
-      <Input
-        value={amount}
-        disabled={isLocked}
-        inputMode="decimal"
-        onChange={(e) => setAmount(e.target.value)}
-        className="h-11 rounded-xl font-mono disabled:opacity-60"
-        aria-label="Amount"
-      />
-
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} disabled={isLocked} />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Swap units"
-          disabled={isLocked}
-          onClick={() => {
-            setFromUnit(toUnit);
-            setToUnit(fromUnit);
+      <div
+        onClick={() => isLocked && onRequestUpgrade("Unit & Currency Converter")}
+        className={isLocked ? "space-y-4 cursor-pointer" : "space-y-4"}
+      >
+        <Input
+          value={amount}
+          readOnly={isLocked}
+          inputMode="decimal"
+          onChange={(e) => {
+            if (!isLocked) setAmount(e.target.value);
           }}
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-        </Button>
-        <UnitSelect value={toUnit} onChange={setToUnit} options={options} disabled={isLocked} />
+          className="h-11 rounded-xl font-mono"
+          aria-label="Amount"
+        />
+
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <UnitSelect value={fromUnit} onChange={setFromUnit} options={options} disabled={isLocked} />
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Swap units"
+            onClick={() => {
+              if (isLocked) {
+                onRequestUpgrade("Unit & Currency Converter");
+                return;
+              }
+              setFromUnit(toUnit);
+              setToUnit(fromUnit);
+            }}
+          >
+            <ArrowRightLeft className="w-4 h-4" />
+          </Button>
+          <UnitSelect value={toUnit} onChange={setToUnit} options={options} disabled={isLocked} />
+        </div>
       </div>
 
       <Button
         onClick={handleConvert}
         disabled={isConverting}
-        className="w-full h-11 rounded-xl font-bold gap-2 active:scale-95 transition-all cursor-pointer"
+        className="w-full h-11 min-h-[44px] rounded-xl font-bold gap-2 active:scale-95 transition-all cursor-pointer"
       >
         {isConverting ? (
           <>
@@ -199,7 +209,7 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
         ) : isLocked ? (
           <>
             <Lock className="w-4 h-4" />
-            <span>Unlock Pro to Convert ($19.99)</span>
+            <span>Unlock All Features to Convert</span>
           </>
         ) : (
           "Convert"
@@ -266,17 +276,20 @@ export const ConverterView: React.FC<ConverterViewProps> = ({ isPro, onRequestUp
       )}
 
       {isLocked && (
-        <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-between gap-2 text-xs">
+        <div
+          onClick={() => onRequestUpgrade("Unit & Currency Converter")}
+          className="p-3.5 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-between gap-2 text-xs cursor-pointer"
+        >
           <div className="flex items-center gap-2">
             <PremiumLock />
-            <span>Converter requires Lifetime Pro.</span>
+            <span>Free converter trials complete.</span>
           </div>
           <Button
             size="sm"
             onClick={() => onRequestUpgrade("Unit & Currency Converter")}
-            className="h-8 text-xs rounded-xl font-bold"
+            className="h-9 min-h-[36px] text-xs rounded-xl font-bold"
           >
-            Unlock Pro ($19.99)
+            Unlock All Features
           </Button>
         </div>
       )}

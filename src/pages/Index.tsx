@@ -5,7 +5,9 @@ import { GraphingCalculatorView } from "@/components/GraphingCalculatorView";
 import { EquationSolverView } from "@/components/EquationSolverView";
 import { ConverterView } from "@/components/ConverterView";
 import { UpgradeModal } from "@/components/UpgradeModal";
-import { usePlayBilling } from "@/hooks/usePlayBilling";
+import { SettingsDialog } from "@/components/SettingsDialog";
+import { useSubscription } from "@/hooks/usePlayBilling";
+import { SUBSCRIPTION_TAG } from "@/lib/playBilling";
 import { requestInAppReview } from "@/lib/inAppReview";
 import { useNetworkMode } from "@/lib/networkMode";
 import {
@@ -35,13 +37,19 @@ import {
   Star,
   Wifi,
   WifiOff,
-  ShieldAlert,
   Lock,
+  Settings,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 
 type TabKey = "calc" | "graph" | "equations" | "converter";
 
 const STORAGE_THEME = "calc.theme.v1";
+const STORAGE_ZOOM = "calc.zoom.v1";
+const MIN_ZOOM = 80;
+const MAX_ZOOM = 130;
+const ZOOM_STEP = 10;
 
 const Index = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -54,11 +62,31 @@ const Index = () => {
   );
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [featureTrigger, setFeatureTrigger] = useState<string>("");
   const [dark, setDark] = useState(false);
+  const [zoomPercent, setZoomPercent] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(STORAGE_ZOOM));
+      if (!isNaN(saved) && saved >= MIN_ZOOM && saved <= MAX_ZOOM) {
+        return saved;
+      }
+    } catch {
+      // ignore storage access issues
+    }
+    return 100;
+  });
   const [, setTrialTick] = useState(0);
 
-  const { isPro, purchasePlan, checkSubscription } = usePlayBilling();
+  const {
+    isPro,
+    subscriptionStatus,
+    subscriptionTier,
+    subscriptionExpiresAt,
+    purchasePlan,
+    checkSubscription,
+    plans,
+  } = useSubscription();
   const network = useNetworkMode();
 
   // Listen for feature trial use events to re-render tab lock badges live
@@ -83,10 +111,31 @@ const Index = () => {
     localStorage.setItem(STORAGE_THEME, dark ? "dark" : "light");
   }, [dark]);
 
+  // Apply root zoom level cleanly across the app
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${zoomPercent}%`;
+    try {
+      localStorage.setItem(STORAGE_ZOOM, String(zoomPercent));
+    } catch {
+      // ignore
+    }
+  }, [zoomPercent]);
+
+  const handleZoomIn = () =>
+    setZoomPercent((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP));
+  const handleZoomOut = () =>
+    setZoomPercent((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP));
+  const handleZoomReset = () => setZoomPercent(100);
+
+  const handleRequestUpgrade = (featureName: string) => {
+    setFeatureTrigger(featureName);
+    setUpgradeOpen(true);
+  };
+
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
     setSearchParams({ tab });
-    // Check if clicked feature has exhausted its 2 free trial uses
+    // Redirect unsubscribed users to the paywall when clicking on an exhausted trial feature
     if (tab !== "calc" && !hasFeatureFreeTrials(tab, isPro) && !isPro) {
       handleRequestUpgrade(
         tab === "graph"
@@ -98,7 +147,7 @@ const Index = () => {
     }
   };
 
-  // If user opens app directly on an exhausted premium tab, prompt upgrade modal
+  // If user opens app directly on an exhausted premium tab, prompt paywall modal
   useEffect(() => {
     if (activeTab !== "calc" && !hasFeatureFreeTrials(activeTab, isPro) && !isPro) {
       handleRequestUpgrade(
@@ -111,11 +160,6 @@ const Index = () => {
     }
   }, [activeTab, isPro]);
 
-  const handleRequestUpgrade = (featureName: string) => {
-    setFeatureTrigger(featureName);
-    setUpgradeOpen(true);
-  };
-
   const tabs: Array<{ key: TabKey; label: string; icon: React.ReactNode; isPremiumTool?: boolean }> = [
     { key: "calc", label: "Calculator", icon: <CalcIcon className="w-4 h-4" /> },
     { key: "graph", label: "Graphing", icon: <LineChart className="w-4 h-4" />, isPremiumTool: true },
@@ -126,56 +170,107 @@ const Index = () => {
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background text-foreground transition-colors duration-200">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 w-full border-b border-border/80 bg-background/80 backdrop-blur-md px-4 py-3">
-        <div className="max-w-md mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-extrabold tracking-tight">
-              Nume<span className="text-primary font-bold ml-1 text-xs px-2 py-0.5 rounded-full bg-primary/10">PRO</span>
+      <header className="sticky top-0 z-30 w-full border-b border-border/80 bg-background/85 backdrop-blur-md px-3 sm:px-4 py-2.5">
+        <div className="max-w-md mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-base font-extrabold tracking-tight truncate">
+              Nume
             </h1>
+            {isPro ? (
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">
+                PRO
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleRequestUpgrade("")}
+                className="min-h-[36px] px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-extrabold tracking-tight shadow-xs truncate cursor-pointer flex items-center gap-1.5 transition active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>{isBlocked ? "Subscribe" : "Unlock"}</span>
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            {isPro ? (
-              <span className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-primary text-primary-foreground flex items-center gap-1 shadow-xs">
-                <Sparkles className="w-3.5 h-3.5" /> LIFETIME PRO
-              </span>
-            ) : isBlocked ? (
+          <div className="flex items-center gap-1">
+            {/* Zoom In / Out Controls */}
+            <div
+              className="flex items-center rounded-xl border border-border bg-card/60"
+              role="group"
+              aria-label="App zoom controls"
+            >
               <Button
-                size="sm"
-                onClick={() => handleRequestUpgrade("Lifetime Access")}
-                className="h-8 px-3 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white text-xs gap-1.5 shadow-xs"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-8 rounded-l-xl rounded-r-none cursor-pointer"
+                onClick={handleZoomOut}
+                disabled={zoomPercent <= MIN_ZOOM}
+                aria-label="Zoom out"
+                title="Zoom out"
               >
-                <ShieldAlert className="w-3.5 h-3.5" />
-                <span>Unlock Pro ($19.99)</span>
+                <ZoomOut className="h-3.5 w-3.5" />
               </Button>
-            ) : null}
+              <button
+                type="button"
+                onClick={handleZoomReset}
+                aria-label={`Current zoom ${zoomPercent} percent. Click to reset`}
+                title="Click to reset zoom to 100%"
+                className="h-9 px-1.5 text-[11px] font-bold tabular-nums text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                {zoomPercent}%
+              </button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-8 rounded-r-xl rounded-l-none cursor-pointer"
+                onClick={handleZoomIn}
+                disabled={zoomPercent >= MAX_ZOOM}
+                aria-label="Zoom in"
+                title="Zoom in"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+              </Button>
+            </div>
 
+            {/* Online / Offline Toggle (Permanently Unlocked) */}
             <Button
               variant="outline"
               size="sm"
-              className="h-8 px-2 rounded-xl text-[11px] gap-1"
+              className="h-9 px-2 rounded-xl text-[11px] gap-1 cursor-pointer"
               onClick={() => network.setPreference(network.preference === "online" ? "offline" : "online")}
               aria-label={network.online ? "Online mode on. Switch to offline" : "Offline mode on. Switch to online"}
               title={!network.deviceOnline ? "No connection — working offline" : undefined}
             >
               {network.online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-              {network.online ? "Online" : "Offline"}
+              <span className="hidden xs:inline">{network.online ? "Online" : "Offline"}</span>
             </Button>
 
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-xl"
+              className="h-9 w-9 rounded-xl cursor-pointer"
               onClick={() => setDark((d) => !d)}
               aria-label="Toggle theme"
+              title="Toggle light/dark theme"
             >
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl cursor-pointer"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Settings and Manage Subscription"
+              title="Settings"
+            >
+              <Settings className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
         {/* Tab Navigation Bar */}
-        <div className="max-w-md mx-auto mt-2.5">
+        <div className="max-w-md mx-auto mt-2">
           <nav className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/60 border border-border/60">
             {tabs.map((tab) => {
               const isActive = activeTab === tab.key;
@@ -184,7 +279,7 @@ const Index = () => {
                   key={tab.key}
                   type="button"
                   onClick={() => handleTabChange(tab.key)}
-                  className={`py-2 px-1 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition ${
+                  className={`min-h-[40px] py-2 px-1 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer ${
                     isActive
                       ? "bg-card text-foreground shadow-xs font-bold"
                       : "text-muted-foreground hover:text-foreground"
@@ -193,7 +288,7 @@ const Index = () => {
                   {tab.icon}
                   <span className="truncate">{tab.label}</span>
                   {tab.isPremiumTool && !hasFeatureFreeTrials(tab.key, isPro) && !isPro && (
-                    <Lock className="w-2.5 h-2.5 opacity-70 text-amber-500 shrink-0" />
+                    <Lock className="w-2.5 h-2.5 opacity-80 text-amber-500 shrink-0" />
                   )}
                 </button>
               );
@@ -203,7 +298,7 @@ const Index = () => {
       </header>
 
       {/* Main Feature View Container */}
-      <main className={`flex-1 w-full mx-auto p-4 sm:p-5 pb-24 ${activeTab === "equations" ? "max-w-3xl" : "max-w-md"}`}>
+      <main className={`flex-1 w-full mx-auto p-4 sm:p-5 pb-20 ${activeTab === "equations" ? "max-w-3xl" : "max-w-md"}`}>
         {activeTab === "calc" && (
           <Calculator isPro={isPro} onRequestUpgrade={handleRequestUpgrade} />
         )}
@@ -218,38 +313,64 @@ const Index = () => {
         )}
       </main>
 
-      {/* Bottom Legal & Safety Footer Floating Pill */}
-      <footer className={`${activeTab === "equations" ? "self-center mb-3" : "fixed bottom-3 left-1/2 -translate-x-1/2"} z-20 rounded-full bg-background/90 backdrop-blur-md border border-border/80 shadow-lg px-3 py-1 flex items-center gap-1.5 text-xs`}>
-        <PolicyDialog
-          title="Privacy Policy"
-          trigger="Privacy"
-          body={<PrivacyPolicy />}
-        />
-        <span className="text-muted-foreground/40">·</span>
-        <PolicyDialog title="About & Licensing" trigger="About" body={<About />} />
-        <span className="text-muted-foreground/40">·</span>
-        <PolicyDialog title="Data Safety" trigger="Data" body={<DataSafety />} />
-        <span className="text-muted-foreground/40">·</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
-          onClick={() => void requestInAppReview()}
-        >
-          <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-          <span>Rate</span>
-        </Button>
+      {/* Bottom Legal & Settings Bar */}
+      <footer className="w-full border-t border-border/60 bg-background/85 backdrop-blur-md py-2 px-4 mt-auto">
+        <div className="max-w-md mx-auto flex items-center justify-center gap-2 text-xs">
+          <PolicyDialog title="Privacy Policy" trigger="Privacy" body={<PrivacyPolicy />} />
+          <span className="text-muted-foreground/40">·</span>
+          <PolicyDialog title="About & Licensing" trigger="About" body={<About />} />
+          <span className="text-muted-foreground/40">·</span>
+          <PolicyDialog title="Data Safety" trigger="Data" body={<DataSafety />} />
+          <span className="text-muted-foreground/40">·</span>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground transition rounded-md cursor-pointer"
+          >
+            Settings
+          </button>
+          <span className="text-muted-foreground/40">·</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
+            onClick={() => void requestInAppReview()}
+          >
+            <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+            <span>Rate</span>
+          </Button>
+        </div>
       </footer>
 
-      {/* Upgrade / Permanent Paywall Dialog */}
+      {/* Subscription Paywall Dialog */}
       <UpgradeModal
         open={upgradeOpen}
         onOpenChange={setUpgradeOpen}
         featureTrigger={featureTrigger}
         isPro={isPro}
         isBlocked={isBlocked}
+        plans={plans}
         onPurchase={purchasePlan}
         onRestore={checkSubscription}
+      />
+
+      {/* Settings Dialog with Manage Subscription & Zoom Controls */}
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        isPro={isPro}
+        plans={plans}
+        subscriptionStatus={subscriptionStatus}
+        subscriptionTier={subscriptionTier}
+        subscriptionExpiresAt={subscriptionExpiresAt}
+        onOpenPaywall={() => handleRequestUpgrade("")}
+        onRestorePurchases={checkSubscription}
+        zoomPercent={zoomPercent}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onZoomReset={handleZoomReset}
+        dark={dark}
+        onToggleDark={() => setDark((d) => !d)}
       />
     </div>
   );
@@ -270,7 +391,7 @@ const PolicyDialog = ({
       <DialogTrigger asChild>
         <button
           type="button"
-          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground transition rounded-md"
+          className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground transition rounded-md cursor-pointer"
         >
           {trigger}
         </button>
@@ -301,11 +422,11 @@ const PrivacyPolicy = () => (
     </p>
     <h3 className="font-semibold text-sm mt-3">Local Device Storage</h3>
     <p>
-      Calculation history and theme preferences are stored locally on your device in your browser's private local storage.
+      Calculation history, zoom scale, and theme preferences are stored locally on your device in your browser's private local storage.
     </p>
-    <h3 className="font-semibold text-sm mt-3">In-App Purchases & Google Play Billing</h3>
+    <h3 className="font-semibold text-sm mt-3">Subscriptions & Google Play Billing</h3>
     <p>
-      Nume Pro offers a 1-day free trial followed by a single one-time lifetime purchase of <strong>$19.99</strong> (Product ID: <code>lifetime_premium</code>) processed through Google Play In-App Billing for package <code>scientific.calculator.cm</code>.
+      Nume offers <strong>Monthly Subscription</strong> (Product ID: <code>premium_monthly</code>, Base Plan: <code>monthly-autorewal</code>) and <strong>Weekly Subscription</strong> (Product ID: <code>premium_weekly</code>, Base Plan: <code>weekly-autorenewal</code>) processed through Google Play In-App Billing for package <code>scientific.calculator.cm</code>.
     </p>
     <h3 className="font-semibold text-sm mt-3">Advertising & Trackers</h3>
     <p>Nume contains zero third-party advertisements, zero trackers, and zero telemetry.</p>
@@ -319,16 +440,16 @@ const About = () => (
     </p>
     <h3 className="font-semibold text-sm mt-3">Features Included:</h3>
     <ul className="list-disc pl-5 space-y-1">
-      <li>Unlimited scientific calculator with trigonometric, logarithmic, and power functions.</li>
-      <li>2D Graphing suite with interactive Cartesian coordinates.</li>
-      <li>Algebraic linear and quadratic equation solver.</li>
-      <li>Worldwide currency converter and unit measurement converter.</li>
-      <li>Calculation history with PDF report export.</li>
+      <li>Unlimited free scientific calculator and Online/Offline mode toggle.</li>
+      <li>2D Graphing suite (3 free lifetime trials, unlimited with subscription).</li>
+      <li>Algebraic equation solver (3 free lifetime trials, unlimited with subscription).</li>
+      <li>Worldwide currency and unit converter (4 free lifetime trials, unlimited with subscription).</li>
+      <li>Calculation history and PDF report export (3 free lifetime trials, unlimited with subscription).</li>
     </ul>
-    <h3 className="font-semibold text-sm mt-3">Lifetime Access Pricing:</h3>
+    <h3 className="font-semibold text-sm mt-3">Subscription Plans:</h3>
     <p>
-      <strong>Product ID:</strong> <code>lifetime_premium</code><br />
-      <strong>One-Time Purchase:</strong> $19.99 (No recurring subscriptions)
+      <strong>Monthly Subscription:</strong> <code>premium_monthly</code> (<code>monthly-autorewal</code>)<br />
+      <strong>Weekly Subscription:</strong> <code>premium_weekly</code> (<code>weekly-autorenewal</code>)
     </p>
   </>
 );
@@ -337,13 +458,13 @@ const DataSafety = () => (
   <>
     <h3 className="font-semibold text-sm">Google Play Data Safety Summary</h3>
     <ul className="list-disc pl-5 space-y-1.5">
-      <li><strong>Data collected:</strong> None. Zero personal data collected.</li>
+      <li><strong>Data collected:</strong> None beyond account subscription status if signed in.</li>
       <li><strong>Data shared:</strong> None. No data shared with third parties.</li>
-      <li><strong>Security practices:</strong> All data stored strictly on device storage.</li>
+      <li><strong>Security practices:</strong> Calculations stored strictly on device storage.</li>
     </ul>
     <h3 className="font-semibold text-sm mt-3">Trial Testing & Reset</h3>
     <p className="text-muted-foreground">
-      Exhaust all 2 free trial uses to test the paywall lock, or reset trials back to 2 free uses per feature:
+      Test the paywall lock (4 free trials for Converter, 3 free trials for other tools) or restore trials:
     </p>
     <div className="flex flex-wrap gap-2 mt-2">
       <Button
@@ -352,14 +473,14 @@ const DataSafety = () => (
         className="text-xs rounded-xl border-amber-500/50 text-amber-600 dark:text-amber-400 font-bold hover:bg-amber-500/10 cursor-pointer"
         onClick={() => {
           exhaustAllFeatureTrials();
-          localStorage.removeItem('lifetime_purchased');
-          localStorage.removeItem('billing_status');
-          localStorage.removeItem('billing_plan_id');
-          localStorage.removeItem('nume.web-subscription.v1');
+          localStorage.removeItem("billing_status");
+          localStorage.removeItem("billing_plan_id");
+          localStorage.removeItem("subscription_active");
+          localStorage.removeItem("play_subscription_token");
           window.location.reload();
         }}
       >
-        Exhaust 2 Free Trial Uses (Lock Features)
+        Exhaust Free Trials (Lock Features)
       </Button>
       <Button
         variant="outline"
@@ -367,14 +488,14 @@ const DataSafety = () => (
         className="text-xs rounded-xl cursor-pointer"
         onClick={() => {
           resetAllFeatureTrials();
-          localStorage.removeItem('lifetime_purchased');
-          localStorage.removeItem('billing_status');
-          localStorage.removeItem('billing_plan_id');
-          localStorage.removeItem('nume.web-subscription.v1');
+          localStorage.removeItem("billing_status");
+          localStorage.removeItem("billing_plan_id");
+          localStorage.removeItem("subscription_active");
+          localStorage.removeItem("play_subscription_token");
           window.location.reload();
         }}
       >
-        Reset Free Trials (2 Uses per Feature)
+        Reset Free Trials
       </Button>
     </div>
 

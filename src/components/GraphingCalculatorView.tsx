@@ -90,7 +90,10 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
       </div>
 
       {/* Input row */}
-      <div className="flex gap-2">
+      <div
+        onClick={() => isLocked && onRequestUpgrade("2D Graphing Calculator")}
+        className="flex gap-2"
+      >
         <div className="relative flex-1">
           <span className="absolute left-3 top-2.5 text-xs font-mono text-muted-foreground">
             f(x) =
@@ -98,8 +101,10 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
           <Input
             aria-label="Function"
             value={expr}
-            onChange={(e) => setExpr(e.target.value)}
-            disabled={isLocked}
+            readOnly={isLocked}
+            onChange={(e) => {
+              if (!isLocked) setExpr(e.target.value);
+            }}
             placeholder="e.g. x^2 - 4"
             onKeyDown={(e) => e.key === "Enter" && handlePlot()}
             className="pl-14 h-11 rounded-xl text-sm font-mono"
@@ -107,12 +112,12 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
         </div>
         <Button
           onClick={() => handlePlot()}
-          className="h-11 px-5 rounded-xl font-bold gap-1.5"
+          className="h-11 px-5 rounded-xl font-bold gap-1.5 cursor-pointer"
         >
           {isLocked ? (
             <>
               <Lock className="w-4 h-4" />
-              Premium
+              Unlock
             </>
           ) : (
             "Plot"
@@ -120,15 +125,20 @@ export const GraphingCalculatorView: React.FC<GraphingCalculatorViewProps> = ({
         </Button>
       </div>
 
-      {/* Preset Pills */}
+      {/* Preset Equations */}
       <div className="flex flex-wrap gap-1.5">
         {presets.map((p) => (
           <button
             key={p}
             type="button"
-            disabled={isLocked}
-            onClick={() => setExpr(p)}
-            className="px-2.5 py-1 rounded-lg text-xs font-mono bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition border border-border/50 disabled:opacity-50"
+            onClick={() => {
+              if (isLocked) {
+                onRequestUpgrade("2D Graphing Calculator");
+                return;
+              }
+              setExpr(p);
+            }}
+            className="px-2.5 py-1.5 min-h-[34px] rounded-lg text-xs font-mono bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition border border-border/50 cursor-pointer"
           >
             {p}
           </button>
