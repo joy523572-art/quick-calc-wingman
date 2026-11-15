@@ -252,4 +252,80 @@ describe("Google Play Digital Goods API, Subscriptions & Dynamic Pricing", () =>
     expect(isAppPermanentlyBlocked(false)).toBe(true);
     expect(isAppPermanentlyBlocked(true)).toBe(false);
   });
+
+  it("automatically revokes premium_unlimited and PRO when Google Play returns empty purchases after cancellation", async () => {
+    localStorage.setItem("premium_unlimited", "true");
+    localStorage.setItem("isPremium", "true");
+    localStorage.setItem("subscription_active", "true");
+    localStorage.setItem("billing_status", "active");
+    localStorage.setItem("play_subscription_token", "CANCELLED_TOKEN");
+
+    const onUpdated = vi.fn();
+    window.addEventListener("nume:subscription-updated", onUpdated);
+
+    (window as unknown as Record<string, unknown>).getDigitalGoodsService = vi.fn().mockResolvedValue({
+      getDetails: vi.fn().mockResolvedValue([]),
+      listPurchases: vi.fn().mockResolvedValue([]),
+    });
+    (window as unknown as Record<string, unknown>).PaymentRequest = vi.fn();
+
+    const active = await hasActivePlaySubscription();
+    expect(active).toBe(false);
+    expect(localStorage.getItem("premium_unlimited")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBeNull();
+    expect(localStorage.getItem("subscription_active")).toBeNull();
+    expect(localStorage.getItem("billing_status")).toBeNull();
+    expect(localStorage.getItem("play_subscription_token")).toBeNull();
+    expect(onUpdated).toHaveBeenCalled();
+    window.removeEventListener("nume:subscription-updated", onUpdated);
+  });
+
+  it("automatically revokes premium_unlimited when native Android queryPurchases or onPurchasesUpdated returns empty", async () => {
+    localStorage.setItem("premium_unlimited", "true");
+    localStorage.setItem("isPremium", "true");
+
+    window.AndroidBilling = {
+      queryPurchases: vi.fn().mockResolvedValue([]),
+    };
+
+    const active = await hasActivePlaySubscription();
+    expect(active).toBe(false);
+    expect(localStorage.getItem("premium_unlimited")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBeNull();
+
+    localStorage.setItem("premium_unlimited", "true");
+    localStorage.setItem("isPremium", "true");
+    await window.onPurchasesUpdated?.([]);
+    expect(localStorage.getItem("premium_unlimited")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBeNull();
+  });
+
+  it("keeps unexpired saved subscription when offline and revokes if locally expired", async () => {
+    const futureExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    localStorage.setItem("isPremium", "true");
+    localStorage.setItem(
+      "nume.subscription_profile.v1",
+      JSON.stringify({
+        subscription_status: "active",
+        subscription_tier: "premium_weekly",
+        subscription_expires_at: futureExpiry,
+      })
+    );
+
+    const onLineSpy = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    expect(await hasActivePlaySubscription()).toBe(true);
+
+    const pastExpiry = new Date(Date.now() - 60 * 1000).toISOString();
+    localStorage.setItem(
+      "nume.subscription_profile.v1",
+      JSON.stringify({
+        subscription_status: "active",
+        subscription_tier: "premium_weekly",
+        subscription_expires_at: pastExpiry,
+      })
+    );
+    expect(await hasActivePlaySubscription()).toBe(false);
+    expect(localStorage.getItem("isPremium")).toBeNull();
+    onLineSpy.mockRestore();
+  });
 });

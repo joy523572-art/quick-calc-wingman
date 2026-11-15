@@ -4,6 +4,7 @@ import {
   getCachedProductPlans,
   queryProductDetailsAsync,
   hasActivePlaySubscription,
+  hasLocalActiveEntitlement,
   buySubscription,
   isPlayBillingAvailable,
   resetPlaySubscription,
@@ -19,26 +20,21 @@ import {
 } from "@/lib/subscriptionSync";
 
 function getInitialActiveState(): boolean {
-  if (typeof window === "undefined") return false;
-  const meta = readLocalSubscriptionMetadata();
-  return (
-    localStorage.getItem("isPremium") === "true" ||
-    localStorage.getItem("subscription_active") === "true" ||
-    localStorage.getItem("billing_status") === "active" ||
-    Boolean(localStorage.getItem("play_subscription_token")) ||
-    meta.subscription_status === "active"
-  );
+  return hasLocalActiveEntitlement();
 }
 
 export function usePlayBilling() {
   const initialMeta = readLocalSubscriptionMetadata();
+  const initialActive = getInitialActiveState();
   const [plans, setPlans] = useState<SubscriptionPlan[]>(getCachedProductPlans);
-  const [isPro, setIsPro] = useState(getInitialActiveState);
+  const [isPro, setIsPro] = useState(initialActive);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>(
-    getInitialActiveState() ? "active" : initialMeta.subscription_status
+    initialActive ? "active" : initialMeta.subscription_status
   );
   const [subscriptionTier, setSubscriptionTier] = useState<string | null>(
-    initialMeta.subscription_tier || localStorage.getItem("billing_plan_id") || (getInitialActiveState() ? "premium_monthly" : null)
+    initialActive
+      ? initialMeta.subscription_tier || localStorage.getItem("billing_plan_id") || "premium_monthly"
+      : initialMeta.subscription_tier
   );
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(
     initialMeta.subscription_expires_at
@@ -51,14 +47,14 @@ export function usePlayBilling() {
     const fallback = meta ?? readLocalSubscriptionMetadata();
     setIsPro(active);
     setSubscriptionStatus(active ? "active" : fallback.subscription_status === "active" ? "inactive" : fallback.subscription_status);
-    setSubscriptionTier(active ? fallback.subscription_tier || localStorage.getItem("billing_plan_id") || "premium_monthly" : fallback.subscription_tier);
+    setSubscriptionTier(active ? fallback.subscription_tier || localStorage.getItem("billing_plan_id") || "premium_monthly" : null);
     setSubscriptionExpiresAt(active ? fallback.subscription_expires_at : fallback.subscription_expires_at);
   }, []);
 
   const checkSubscription = useCallback(async () => {
     const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
     if (isOffline) {
-      const active = getInitialActiveState();
+      const active = hasLocalActiveEntitlement();
       applySubscriptionMeta(active, readLocalSubscriptionMetadata());
       return active;
     }
@@ -71,16 +67,32 @@ export function usePlayBilling() {
         fetchProfileSubscription(),
       ]);
 
+      const profileRevoked =
+        profileMeta?.subscription_status === "cancelled" ||
+        profileMeta?.subscription_status === "expired" ||
+        profileMeta?.subscription_status === "inactive";
+
       const profileActive =
         profileMeta?.subscription_status === "active" &&
         (!profileMeta.subscription_expires_at ||
           new Date(profileMeta.subscription_expires_at).getTime() > Date.now());
 
-      const active = playActive || profileActive || getInitialActiveState();
-      applySubscriptionMeta(active, profileMeta);
+      let active = false;
+      if (playActive) {
+        active = true;
+      } else if (profileRevoked) {
+        resetPlaySubscription(false, profileMeta.subscription_status);
+        active = false;
+      } else if (profileActive && !isPlayBillingAvailable()) {
+        active = true;
+      } else {
+        active = false;
+      }
+
+      applySubscriptionMeta(active, active ? profileMeta : readLocalSubscriptionMetadata());
       return active;
     } catch {
-      const fallbackActive = getInitialActiveState();
+      const fallbackActive = hasLocalActiveEntitlement();
       applySubscriptionMeta(fallbackActive, readLocalSubscriptionMetadata());
       return fallbackActive;
     } finally {
@@ -119,12 +131,28 @@ export function usePlayBilling() {
       }
     };
 
+    const handleFocusOrOnline = () => {
+      void checkSubscription();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void checkSubscription();
+      }
+    };
+
     window.addEventListener(SUBSCRIPTION_UPDATED_EVENT, handleUpdated);
     window.addEventListener(PRODUCT_DETAILS_UPDATED_EVENT, handleProductDetailsUpdated);
+    window.addEventListener("focus", handleFocusOrOnline);
+    window.addEventListener("online", handleFocusOrOnline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener(SUBSCRIPTION_UPDATED_EVENT, handleUpdated);
       window.removeEventListener(PRODUCT_DETAILS_UPDATED_EVENT, handleProductDetailsUpdated);
+      window.removeEventListener("focus", handleFocusOrOnline);
+      window.removeEventListener("online", handleFocusOrOnline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [applySubscriptionMeta, checkSubscription]);
 

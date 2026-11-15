@@ -1,4 +1,9 @@
+import { isEffectiveOffline } from "./networkMode";
+
 async function getSupabaseClient() {
+  if (isEffectiveOffline()) {
+    return null;
+  }
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) {

@@ -7,7 +7,7 @@ import { ConverterView } from "@/components/ConverterView";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { useSubscription } from "@/hooks/usePlayBilling";
-import { SUBSCRIPTION_TAG } from "@/lib/playBilling";
+import { resetPlaySubscription, SUBSCRIPTION_TAG } from "@/lib/playBilling";
 import { requestInAppReview } from "@/lib/inAppReview";
 import { useNetworkMode } from "@/lib/networkMode";
 import {
@@ -236,13 +236,17 @@ const Index = () => {
             <Button
               variant="outline"
               size="sm"
-              className="h-9 px-2 rounded-xl text-[11px] gap-1 cursor-pointer"
+              className="h-9 px-2.5 rounded-xl text-[11px] font-semibold gap-1.5 cursor-pointer"
               onClick={() => network.setPreference(network.preference === "online" ? "offline" : "online")}
               aria-label={network.online ? "Online mode on. Switch to offline" : "Offline mode on. Switch to online"}
-              title={!network.deviceOnline ? "No connection — working offline" : undefined}
+              title={!network.deviceOnline ? "No internet connection — working offline" : network.online ? "Switch to Offline mode" : "Switch to Online mode"}
             >
-              {network.online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-              <span className="hidden xs:inline">{network.online ? "Online" : "Offline"}</span>
+              {network.online ? (
+                <Wifi className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              ) : (
+                <WifiOff className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+              )}
+              <span className="inline">{network.online ? "Online" : "Offline"}</span>
             </Button>
 
             <Button
@@ -451,6 +455,9 @@ const About = () => (
       <strong>Monthly Subscription:</strong> <code>premium_monthly</code> (<code>monthly-autorewal</code>)<br />
       <strong>Weekly Subscription:</strong> <code>premium_weekly</code> (<code>weekly-autorenewal</code>)
     </p>
+    <p className="text-muted-foreground pt-2">
+      App Version: <strong>Version 10 (1.0.10)</strong>
+    </p>
   </>
 );
 
@@ -473,10 +480,7 @@ const DataSafety = () => (
         className="text-xs rounded-xl border-amber-500/50 text-amber-600 dark:text-amber-400 font-bold hover:bg-amber-500/10 cursor-pointer"
         onClick={() => {
           exhaustAllFeatureTrials();
-          localStorage.removeItem("billing_status");
-          localStorage.removeItem("billing_plan_id");
-          localStorage.removeItem("subscription_active");
-          localStorage.removeItem("play_subscription_token");
+          resetPlaySubscription(false);
           window.location.reload();
         }}
       >
@@ -488,10 +492,7 @@ const DataSafety = () => (
         className="text-xs rounded-xl cursor-pointer"
         onClick={() => {
           resetAllFeatureTrials();
-          localStorage.removeItem("billing_status");
-          localStorage.removeItem("billing_plan_id");
-          localStorage.removeItem("subscription_active");
-          localStorage.removeItem("play_subscription_token");
+          resetPlaySubscription(false);
           window.location.reload();
         }}
       >

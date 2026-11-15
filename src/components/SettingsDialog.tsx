@@ -130,7 +130,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                     isPro ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
                   }`}
                 >
-                  {isPro ? "Active" : subscriptionStatus === "expired" ? "Expired" : "Free Plan"}
+                  {isPro
+                    ? "Active"
+                    : subscriptionStatus === "cancelled"
+                      ? "Cancelled"
+                      : subscriptionStatus === "expired"
+                        ? "Expired"
+                        : "Free Plan"}
                 </span>
               </div>
 
@@ -312,6 +318,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 })}
               </div>
             </section>
+
+            <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Nume: Scientific Calculator Pro</span>
+              <span className="font-semibold">Version 10 (1.0.10)</span>
+            </div>
           </div>
         </ScrollArea>
       </DialogContent>

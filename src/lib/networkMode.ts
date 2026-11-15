@@ -21,6 +21,13 @@ export const setNetworkPreference = (pref: NetworkPreference) => {
   window.dispatchEvent(new Event(EVENT));
 };
 
+/** Returns true when user switched to Offline mode OR device lacks internet connection. */
+export const isEffectiveOffline = (): boolean => {
+  if (getNetworkPreference() === "offline") return true;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  return false;
+};
+
 /** online = user chose Online mode AND the device actually has a connection. */
 export function useNetworkMode() {
   const [pref, setPref] = useState<NetworkPreference>(getNetworkPreference);

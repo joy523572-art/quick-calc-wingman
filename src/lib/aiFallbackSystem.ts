@@ -1,5 +1,6 @@
 import { solveEquation, EquationSolution } from "./equationSolver";
 import { convertMeasurement, UnitCategory } from "./unitConversion";
+import { isEffectiveOffline } from "./networkMode";
 
 export const CIRCUIT_BREAKER_KEY = "lovable_ai_credits_depleted_month";
 
@@ -289,15 +290,25 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
     };
   }
 
-  const prompt = `Solve algebraic equation: ${equation}. Provide concise step-by-step working and final answer for x.`;
-
-  // Fetch Wikipedia theory in parallel so every solution has standard math definition and formula note
   const isQuadratic = equation.includes("²") || equation.includes("^2");
-  const wikiTerm = isQuadratic ? "Quadratic_equation" : "Linear_equation";
-  const wikiPromise = fetchWikipediaSummary(wikiTerm);
   const defaultFormulaNote = isQuadratic
     ? "Standard quadratic form: ax² + bx + c = 0, solved via discriminant Δ = b² - 4ac."
     : "Standard linear form: ax + b = 0, solved via isolate x = -b/a.";
+
+  // In Offline mode (toggle or no device connection), skip all network requests immediately
+  if (isEffectiveOffline()) {
+    return {
+      ...localBase,
+      providerUsed: "Local Deterministic Engine",
+      formulaNote: defaultFormulaNote,
+    };
+  }
+
+  const prompt = `Solve algebraic equation: ${equation}. Provide concise step-by-step working and final answer for x.`;
+
+  // Fetch Wikipedia theory in parallel so every solution has standard math definition and formula note
+  const wikiTerm = isQuadratic ? "Quadratic_equation" : "Linear_equation";
+  const wikiPromise = fetchWikipediaSummary(wikiTerm);
 
   // 1. Primary Provider: Lovable Cloud credits
   if (isLovableCloudCreditsAvailable()) {
@@ -395,7 +406,7 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
   const wikiDef = await wikiPromise;
   return {
     ...localBase,
-    providerUsed: "Wikipedia API",
+    providerUsed: wikiDef ? "Wikipedia API" : "Local Deterministic Engine",
     definition: wikiDef || undefined,
     formulaNote: defaultFormulaNote,
   };
@@ -438,6 +449,10 @@ export async function repairOcrWithAiFallback(rawOcrText: string): Promise<strin
 
   if (!/\d/.test(rawOcrText)) {
     return "";
+  }
+
+  if (isEffectiveOffline()) {
+    return rawOcrText.trim();
   }
 
   const cleanInput = rawOcrText.slice(0, 300).replace(/["`]/g, "");
@@ -531,6 +546,14 @@ export async function convertWithAiFallback(
     localNum = amount;
   }
   const formatted = String(Number(localNum.toPrecision(10)));
+
+  if (isEffectiveOffline()) {
+    return {
+      numericResult: localNum,
+      formattedResult: formatted,
+      providerUsed: "Local Deterministic Engine",
+    };
+  }
 
   // 1. Primary Provider: Lovable Cloud credits
   try {

@@ -1,3 +1,5 @@
+import { isEffectiveOffline } from "./networkMode";
+
 /**
  * Worldwide currencies with approximate units-per-1-USD rates bundled for Offline mode.
  * In Online mode live rates replace these and are cached for later offline use.
@@ -51,6 +53,9 @@ export function readCachedRates(): RateTable {
 }
 
 export async function fetchLiveRates(signal?: AbortSignal): Promise<RateTable> {
+  if (isEffectiveOffline()) {
+    return readCachedRates();
+  }
   const res = await fetch("https://open.er-api.com/v6/latest/USD", { signal });
   if (!res.ok) throw new Error("Live rates unavailable");
   const data = (await res.json()) as { result?: string; rates?: Record<string, number> };

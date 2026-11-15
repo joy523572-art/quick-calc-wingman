@@ -114,4 +114,31 @@ describe("AI Fallback System & Circuit Breaker", () => {
     const result = await repairOcrWithAiFallback("No digits here");
     expect(result).toBe("");
   });
+
+  it("works strictly offline with zero fetch calls when Offline mode is enabled", async () => {
+    const { setNetworkPreference } = await import("@/lib/networkMode");
+    const { fetchLiveRates } = await import("@/lib/currencies");
+    const { repairOcrWithAiFallback } = await import("@/lib/aiFallbackSystem");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    setNetworkPreference("offline");
+
+    const eqRes = await solveEquationWithAiFallback("2x + 4 = 10");
+    expect(eqRes.roots).toEqual([3]);
+    expect(eqRes.providerUsed).toBe("Local Deterministic Engine");
+
+    const convRes = await convertWithAiFallback(10, "length", "km", "m");
+    expect(convRes.numericResult).toBe(10000);
+    expect(convRes.providerUsed).toBe("Local Deterministic Engine");
+
+    const ocrRes = await repairOcrWithAiFallback("2x + 4 = 10");
+    expect(ocrRes).toBe("2x + 4 = 10");
+
+    const rates = await fetchLiveRates();
+    expect(rates.source).toBe("offline");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    setNetworkPreference("online");
+  });
 });
