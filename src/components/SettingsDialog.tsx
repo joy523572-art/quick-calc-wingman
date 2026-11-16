@@ -101,6 +101,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     { key: "graph", label: "2D Graphing" },
     { key: "equation", label: "Equation Solver" },
     { key: "history", label: "Calculation History" },
+    { key: "equation_pdf", label: "Equation PDF Export" },
+    { key: "history_pdf", label: "History PDF Export" },
   ];
 
   return (
@@ -321,7 +323,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
             <div className="pt-2 border-t border-border/60 flex items-center justify-between text-[11px] text-muted-foreground">
               <span>Nume: Scientific Calculator Pro</span>
-              <span className="font-semibold">Version 10 (1.0.10)</span>
+              <span className="font-semibold">Version 11 (1.0.11)</span>
             </div>
           </div>
         </ScrollArea>

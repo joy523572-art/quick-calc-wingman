@@ -133,6 +133,9 @@ export const Calculator = ({ isPro = false, onRequestUpgrade }: CalculatorProps)
       onRequestUpgrade?.("PDF Calculation Report");
       return;
     }
+    if (!isPro) {
+      consumeFeatureTrial("history_pdf");
+    }
     const records = history.map((h) => ({
       expr: h.expr,
       result: h.result,

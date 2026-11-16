@@ -6,8 +6,16 @@
  * - No time-based (24-hour or 3-day) trial gateways exist; trials are purely lifetime count-based per feature.
  */
 
+export function normalizeFeatureKey(featureKey: string): string {
+  if (featureKey === "equations") return "equation";
+  if (featureKey === "graphs") return "graph";
+  if (featureKey === "converters") return "converter";
+  return featureKey;
+}
+
 export function getMaxFeatureTrials(featureKey: string): number {
-  if (featureKey === "converter") {
+  const key = normalizeFeatureKey(featureKey);
+  if (key === "converter") {
     return 4;
   }
   return 3;
@@ -79,23 +87,24 @@ function removeCookieTrialCount(featureKey: string): void {
 }
 
 export function getFeatureTrialCount(featureKey: string): number {
+  const key = normalizeFeatureKey(featureKey);
   if (typeof window === "undefined") return 0;
   try {
     let localCount = 0;
-    const raw = localStorage.getItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`);
+    const raw = localStorage.getItem(`${FEATURE_TRIAL_PREFIX}${key}`);
     if (raw) {
       const parsed = parseInt(raw, 10);
       if (!isNaN(parsed)) localCount = Math.max(0, parsed);
     }
 
-    const cookieCount = getCookieTrialCount(featureKey);
+    const cookieCount = getCookieTrialCount(key);
     const highestCount = Math.max(localCount, cookieCount);
 
     if (highestCount > localCount) {
-      localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`, highestCount.toString());
+      localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${key}`, highestCount.toString());
     }
     if (highestCount > cookieCount) {
-      setCookieTrialCount(featureKey, highestCount);
+      setCookieTrialCount(key, highestCount);
     }
 
     return highestCount;
@@ -105,15 +114,16 @@ export function getFeatureTrialCount(featureKey: string): number {
 }
 
 export function consumeFeatureTrial(featureKey: string): number {
+  const key = normalizeFeatureKey(featureKey);
   if (typeof window === "undefined") return 0;
-  if (featureKey === "calculator" || featureKey === "network") return 0;
+  if (key === "calculator" || key === "network") return 0;
 
   try {
-    const current = getFeatureTrialCount(featureKey);
-    const maxTrials = getMaxFeatureTrials(featureKey);
+    const current = getFeatureTrialCount(key);
+    const maxTrials = getMaxFeatureTrials(key);
     const updated = Math.min(maxTrials, current + 1);
-    localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${featureKey}`, updated.toString());
-    setCookieTrialCount(featureKey, updated);
+    localStorage.setItem(`${FEATURE_TRIAL_PREFIX}${key}`, updated.toString());
+    setCookieTrialCount(key, updated);
 
     window.dispatchEvent(new Event("nume:feature-trial-used"));
     return updated;
@@ -123,8 +133,9 @@ export function consumeFeatureTrial(featureKey: string): number {
 }
 
 export function hasFeatureFreeTrials(featureKey: string, isSubscribed: boolean): boolean {
+  const key = normalizeFeatureKey(featureKey);
   if (isSubscribed) return true;
-  if (featureKey === "calculator" || featureKey === "network") return true;
+  if (key === "calculator" || key === "network") return true;
 
   try {
     if (typeof window === "undefined") return true;

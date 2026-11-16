@@ -45,6 +45,9 @@ import {
 
 type TabKey = "calc" | "graph" | "equations" | "converter";
 
+const tabToFeatureKey = (tab: TabKey): string =>
+  tab === "equations" ? "equation" : tab;
+
 const STORAGE_THEME = "calc.theme.v1";
 const STORAGE_ZOOM = "calc.zoom.v1";
 const MIN_ZOOM = 80;
@@ -136,7 +139,7 @@ const Index = () => {
     setActiveTab(tab);
     setSearchParams({ tab });
     // Redirect unsubscribed users to the paywall when clicking on an exhausted trial feature
-    if (tab !== "calc" && !hasFeatureFreeTrials(tab, isPro) && !isPro) {
+    if (tab !== "calc" && !hasFeatureFreeTrials(tabToFeatureKey(tab), isPro) && !isPro) {
       handleRequestUpgrade(
         tab === "graph"
           ? "2D Graphing Calculator"
@@ -149,7 +152,7 @@ const Index = () => {
 
   // If user opens app directly on an exhausted premium tab, prompt paywall modal
   useEffect(() => {
-    if (activeTab !== "calc" && !hasFeatureFreeTrials(activeTab, isPro) && !isPro) {
+    if (activeTab !== "calc" && !hasFeatureFreeTrials(tabToFeatureKey(activeTab), isPro) && !isPro) {
       handleRequestUpgrade(
         activeTab === "graph"
           ? "2D Graphing Calculator"
@@ -291,7 +294,7 @@ const Index = () => {
                 >
                   {tab.icon}
                   <span className="truncate">{tab.label}</span>
-                  {tab.isPremiumTool && !hasFeatureFreeTrials(tab.key, isPro) && !isPro && (
+                  {tab.isPremiumTool && !hasFeatureFreeTrials(tabToFeatureKey(tab.key), isPro) && !isPro && (
                     <Lock className="w-2.5 h-2.5 opacity-80 text-amber-500 shrink-0" />
                   )}
                 </button>
@@ -456,7 +459,7 @@ const About = () => (
       <strong>Weekly Subscription:</strong> <code>premium_weekly</code> (<code>weekly-autorenewal</code>)
     </p>
     <p className="text-muted-foreground pt-2">
-      App Version: <strong>Version 10 (1.0.10)</strong>
+      App Version: <strong>Version 11 (1.0.11)</strong>
     </p>
   </>
 );

@@ -95,6 +95,9 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   const downloadPdf = () => {
     if (!canAccessPremiumFeature("equation_pdf", isPro)) return onRequestUpgrade("Download Answers as PDF");
     if (!solution) return;
+    if (!isPro) {
+      consumeFeatureTrial("equation_pdf");
+    }
     downloadTextPdf(
       "Nume - Equation Solution",
       [`Equation: ${solvedEq}`, `Answer: ${solution.summary}`, "", "Step-by-step:", ...solution.steps.map((s, i) => `${i + 1}. ${s}`)],

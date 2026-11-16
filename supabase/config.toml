@@ -1,1 +1,4 @@
 project_id = "tfelyspysqpulhitnkww"
+
+[functions.verify-play-subscription]
+verify_jwt = false

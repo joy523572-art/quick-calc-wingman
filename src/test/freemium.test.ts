@@ -90,4 +90,34 @@ describe("Permanently Unlocked & Lifetime Trial Access", () => {
     expect(getFeatureTrialCount("graph")).toBe(3);
     expect(canAccessPremiumFeature("graph", false)).toBe(false);
   });
+
+  it("keeps equation solver locked after 3 uses even when equation_pdf and history_pdf free trials are unused", async () => {
+    const { hasFeatureFreeTrials, getFeatureRemainingTrials } = await import("@/lib/trialManager");
+
+    expect(getFeatureRemainingTrials("equation_pdf", false)).toBe(3);
+    expect(getFeatureRemainingTrials("history_pdf", false)).toBe(3);
+
+    // Exhaust only the 3 equation solver trials (never touch PDF export)
+    consumeFeatureTrial("equation");
+    consumeFeatureTrial("equation");
+    consumeFeatureTrial("equation");
+
+    // PDF download still has all 3 unused free trials
+    expect(getFeatureRemainingTrials("equation_pdf", false)).toBe(3);
+
+    // Solver feature and "equations" tab MUST remain locked!
+    expect(canAccessPremiumFeature("equation", false)).toBe(false);
+    expect(hasFeatureFreeTrials("equation", false)).toBe(false);
+    expect(hasFeatureFreeTrials("equations", false)).toBe(false);
+
+    // PDF exports themselves also lock cleanly after 3 uses
+    consumeFeatureTrial("equation_pdf");
+    consumeFeatureTrial("equation_pdf");
+    expect(canAccessPremiumFeature("equation_pdf", false)).toBe(true);
+    consumeFeatureTrial("equation_pdf");
+    expect(canAccessPremiumFeature("equation_pdf", false)).toBe(false);
+
+    // Calculator remains permanently free
+    expect(canAccessPremiumFeature("calculator", false)).toBe(true);
+  });
 });

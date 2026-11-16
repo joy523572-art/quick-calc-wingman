@@ -463,6 +463,56 @@ function notifySubscriptionUpdated(isPro: boolean, record?: ProfileSubscriptionR
   );
 }
 
+export interface BackendVerificationResult {
+  active: boolean;
+  status?: SubscriptionStatus;
+  productId?: string;
+  expiresAt?: string | null;
+  acknowledged?: boolean;
+}
+
+/**
+ * Verifies an active Google Play purchase token against the Supabase Edge Function
+ * (`verify-play-subscription`, backed by GOOGLE_SERVICE_ACCOUNT_JSON) when configured and online.
+ * Returns null if offline, unconfigured, or temporarily unreachable so Play Billing client flow continues cleanly.
+ */
+export async function verifyPlayPurchaseWithBackend(
+  purchaseToken: string,
+  productId?: string
+): Promise<BackendVerificationResult | null> {
+  if (!purchaseToken) return null;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return null;
+  }
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (!supabaseUrl || !supabaseKey) {
+    return null;
+  }
+
+  try {
+    const { supabase } = await import("@/integrations/supabase/client");
+    const { data, error } = await supabase.functions.invoke("verify-play-subscription", {
+      body: {
+        purchaseToken,
+        productId: productId || "premium_monthly",
+        packageName: PLAY_PACKAGE_NAME,
+        acknowledgeIfNeeded: true,
+      },
+    });
+
+    if (error || !data || typeof (data as BackendVerificationResult).active !== "boolean") {
+      return null;
+    }
+
+    return data as BackendVerificationResult;
+  } catch (err) {
+    console.warn("[PlayBilling] Backend verification skipped or unavailable:", err);
+    return null;
+  }
+}
+
 /**
  * Grants subscription access when a verified Play Billing purchase arrives
  * (either from Digital Goods API or native wrapper onPurchasesUpdated),
@@ -485,6 +535,19 @@ export async function processVerifiedPlayPurchase(
   if (!isPurchaseAlreadyAcknowledged(purchase)) {
     await acknowledgePlayPurchase(purchase.purchaseToken, productId, service);
   }
+
+  void verifyPlayPurchaseWithBackend(purchase.purchaseToken, productId).then((verified) => {
+    if (verified && verified.active === false) {
+      resetPlaySubscription(true, verified.status || "cancelled");
+    } else if (verified?.active && verified.expiresAt) {
+      const updated = persistGrantedSubscription(
+        verified.productId || productId,
+        purchase.purchaseToken,
+        verified.expiresAt
+      );
+      notifySubscriptionUpdated(true, updated);
+    }
+  });
 
   notifySubscriptionUpdated(true, record);
   return true;
@@ -612,6 +675,26 @@ export async function hasActivePlaySubscription(service?: DigitalGoodsService): 
       }
     } catch (e) {
       console.warn("[PlayBilling] Error querying native Android purchases:", e);
+    }
+  }
+
+  const storedToken =
+    typeof window !== "undefined" ? localStorage.getItem("play_subscription_token") : null;
+  const storedTier =
+    typeof window !== "undefined" ? localStorage.getItem("billing_plan_id") || undefined : undefined;
+  if (storedToken) {
+    const backendStatus = await verifyPlayPurchaseWithBackend(storedToken, storedTier);
+    if (backendStatus && backendStatus.active === false) {
+      resetPlaySubscription(true, backendStatus.status || "cancelled");
+      return false;
+    }
+    if (backendStatus && backendStatus.active === true) {
+      persistGrantedSubscription(
+        backendStatus.productId || storedTier || "premium_monthly",
+        storedToken,
+        backendStatus.expiresAt || undefined
+      );
+      return true;
     }
   }
 
