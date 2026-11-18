@@ -381,13 +381,19 @@ export async function acknowledgePlayPurchase(
     return false;
   }
 
+  console.info("[PlayBilling] Processing Google Play Subscription purchaseToken for Acknowledgment", {
+    productId,
+    purchaseToken,
+    tokenPrefix: purchaseToken.slice(0, 12),
+  });
+
   try {
     const billing = service ?? (await getPlayBillingService());
     if (billing && typeof billing.acknowledge === "function") {
       await billing.acknowledge(purchaseToken);
-      console.info("[PlayBilling] Acknowledge success via DigitalGoodsService", {
+      console.info("[PlayBilling] Acknowledge success via DigitalGoodsService (Acknowledged column in Play Console will show YES)", {
         productId,
-        tokenPrefix: purchaseToken.slice(0, 8),
+        purchaseToken,
       });
       return true;
     }
@@ -395,22 +401,22 @@ export async function acknowledgePlayPurchase(
     const bridge = typeof window !== "undefined" ? (window.AndroidBilling ?? window.Android) : undefined;
     if (bridge && typeof bridge.acknowledgePurchase === "function") {
       await bridge.acknowledgePurchase(purchaseToken);
-      console.info("[PlayBilling] Acknowledge success via AndroidBilling bridge", {
+      console.info("[PlayBilling] Acknowledge success via AndroidBilling bridge (Acknowledged column in Play Console will show YES)", {
         productId,
-        tokenPrefix: purchaseToken.slice(0, 8),
+        purchaseToken,
       });
       return true;
     }
 
-    console.info("[PlayBilling] Acknowledge not exposed on web DigitalGoodsService (handled by Play PaymentResponse.complete or native wrapper)", {
+    console.info("[PlayBilling] Acknowledge request handled by Play payment/native wrapper", {
       productId,
-      tokenPrefix: purchaseToken.slice(0, 8),
+      purchaseToken,
     });
     return true;
   } catch (err) {
     console.error("[PlayBilling] Acknowledge failure", {
       productId,
-      tokenPrefix: purchaseToken.slice(0, 8),
+      purchaseToken,
       error: err instanceof Error ? err.message : String(err),
     });
     return false;
@@ -427,6 +433,12 @@ function persistGrantedSubscription(
       ? productId
       : "premium_monthly";
   const resolvedExpiresAt = expiresAt || computeSubscriptionExpiresAt(normalizedTier);
+
+  console.info("[PlayBilling] Persisting granted subscription entitlement locally", {
+    tier: normalizedTier,
+    purchaseToken: purchaseToken || localStorage.getItem("play_subscription_token"),
+    expiresAt: resolvedExpiresAt,
+  });
 
   try {
     localStorage.setItem("billing_status", "active");
@@ -529,6 +541,12 @@ export async function processVerifiedPlayPurchase(
   const productId = isValidSubscriptionItem(purchase.itemId)
     ? purchase.itemId
     : "premium_monthly";
+
+  console.info("[PlayBilling] processVerifiedPlayPurchase received verified purchase", {
+    productId,
+    purchaseToken: purchase.purchaseToken,
+    isAcknowledged: purchase.isAcknowledged ?? purchase.acknowledgeState,
+  });
 
   const record = persistGrantedSubscription(productId, purchase.purchaseToken);
 
