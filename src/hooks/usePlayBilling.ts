@@ -18,6 +18,7 @@ import {
   readLocalSubscriptionMetadata,
   SubscriptionStatus,
 } from "@/lib/subscriptionSync";
+import { isEffectiveOffline } from "@/lib/networkMode";
 
 function getInitialActiveState(): boolean {
   return hasLocalActiveEntitlement();
@@ -52,8 +53,7 @@ export function usePlayBilling() {
   }, []);
 
   const checkSubscription = useCallback(async () => {
-    const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
-    if (isOffline) {
+    if (isEffectiveOffline()) {
       const active = hasLocalActiveEntitlement();
       applySubscriptionMeta(active, readLocalSubscriptionMetadata());
       return active;
@@ -145,6 +145,7 @@ export function usePlayBilling() {
     window.addEventListener(PRODUCT_DETAILS_UPDATED_EVENT, handleProductDetailsUpdated);
     window.addEventListener("focus", handleFocusOrOnline);
     window.addEventListener("online", handleFocusOrOnline);
+    window.addEventListener("nume:network-mode", handleFocusOrOnline);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
@@ -152,6 +153,7 @@ export function usePlayBilling() {
       window.removeEventListener(PRODUCT_DETAILS_UPDATED_EVENT, handleProductDetailsUpdated);
       window.removeEventListener("focus", handleFocusOrOnline);
       window.removeEventListener("online", handleFocusOrOnline);
+      window.removeEventListener("nume:network-mode", handleFocusOrOnline);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [applySubscriptionMeta, checkSubscription]);

@@ -104,6 +104,8 @@
 
   html {
     @apply antialiased;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
   }
 
   body {
@@ -111,6 +113,8 @@
     background: var(--gradient-bg);
     min-height: 100vh;
     font-feature-settings: "ss01", "cv11";
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
   }
 }
 

@@ -6,6 +6,7 @@ import {
   SubscriptionStatus,
   syncSubscriptionToProfile,
 } from "./subscriptionSync";
+import { isEffectiveOffline } from "./networkMode";
 
 export const PLAY_BILLING_URL = "https://play.google.com/billing";
 export const SUBSCRIPTION_TAG = "Unlock All Features";
@@ -596,19 +597,12 @@ export function clearLocalEntitlementKeys(): void {
 
 export function isLocalSubscriptionExpired(): boolean {
   const meta = readLocalSubscriptionMetadata();
-  if (
+  // Only revoke locally when Google Play or backend explicitly reported cancellation/expiration.
+  // Never expire an active auto-renewing subscriber offline solely from an estimated local timestamp.
+  return (
     meta.subscription_status === "cancelled" ||
     meta.subscription_status === "expired"
-  ) {
-    return true;
-  }
-  if (meta.subscription_expires_at) {
-    const expiryMs = new Date(meta.subscription_expires_at).getTime();
-    if (!Number.isNaN(expiryMs) && expiryMs <= Date.now()) {
-      return true;
-    }
-  }
-  return false;
+  );
 }
 
 export function hasLocalActiveEntitlement(): boolean {
@@ -633,13 +627,11 @@ export function hasLocalActiveEntitlement(): boolean {
 /**
  * Checks Google Play Digital Goods API or native Android billing for active subscriptions on startup
  * and acknowledges any unacknowledged PURCHASED items.
- * If cancelled/expired in Google Play, automatically revokes local premium_unlimited & PRO state.
- * If offline, uses saved unexpired subscription status from local storage without calling Google Play Billing.
+ * If offline (device offline or in-app Offline toggle), keeps saved active subscription unlocked without
+ * calling Google Play Billing until online verification explicitly reports cancellation.
  */
 export async function hasActivePlaySubscription(service?: DigitalGoodsService): Promise<boolean> {
-  const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
-
-  if (isOffline) {
+  if (isEffectiveOffline()) {
     return hasLocalActiveEntitlement();
   }
 

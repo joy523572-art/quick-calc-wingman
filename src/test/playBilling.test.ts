@@ -300,32 +300,41 @@ describe("Google Play Digital Goods API, Subscriptions & Dynamic Pricing", () =>
     expect(localStorage.getItem("isPremium")).toBeNull();
   });
 
-  it("keeps unexpired saved subscription when offline and revokes if locally expired", async () => {
-    const futureExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  it("never drops premium for active subscribers while offline until explicitly cancelled", async () => {
+    const { setNetworkPreference } = await import("@/lib/networkMode");
+    const pastEstimatedRenewal = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     localStorage.setItem("isPremium", "true");
     localStorage.setItem(
       "nume.subscription_profile.v1",
       JSON.stringify({
         subscription_status: "active",
         subscription_tier: "premium_weekly",
-        subscription_expires_at: futureExpiry,
+        subscription_expires_at: pastEstimatedRenewal,
       })
     );
 
+    // 1. Device goes offline: active subscriber MUST keep premium even if local renewal timestamp passed
     const onLineSpy = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     expect(await hasActivePlaySubscription()).toBe(true);
+    expect(localStorage.getItem("isPremium")).toBe("true");
+    onLineSpy.mockRestore();
 
-    const pastExpiry = new Date(Date.now() - 60 * 1000).toISOString();
+    // 2. User switches in-app Offline toggle on: active subscriber MUST keep premium
+    setNetworkPreference("offline");
+    expect(await hasActivePlaySubscription()).toBe(true);
+    expect(localStorage.getItem("isPremium")).toBe("true");
+    setNetworkPreference("online");
+
+    // 3. Only when subscription is actually cancelled is premium revoked
     localStorage.setItem(
       "nume.subscription_profile.v1",
       JSON.stringify({
-        subscription_status: "active",
-        subscription_tier: "premium_weekly",
-        subscription_expires_at: pastExpiry,
+        subscription_status: "cancelled",
+        subscription_tier: null,
+        subscription_expires_at: null,
       })
     );
     expect(await hasActivePlaySubscription()).toBe(false);
     expect(localStorage.getItem("isPremium")).toBeNull();
-    onLineSpy.mockRestore();
   });
 });
