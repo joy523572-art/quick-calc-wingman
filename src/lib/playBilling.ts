@@ -105,10 +105,14 @@ export type PlayItemDetails = {
 
 export type PlayPurchase = {
   itemId: string;
+  productId?: string;
+  products?: string[];
   purchaseToken: string;
   acknowledgeState?: "acknowledged" | "unacknowledged" | string;
   purchaseState?: string | number;
   isAcknowledged?: boolean;
+  expiryTime?: string;
+  expiryTimeMillis?: number;
 };
 
 export type NativeSubscriptionPayload = {
@@ -138,9 +142,19 @@ export type NativeAndroidBillingBridge = {
   triggerPurchase?: (productId: string, basePlanId: string) => boolean | Promise<boolean> | void;
   purchase?: (productId: string, basePlanId: string) => boolean | Promise<boolean> | void;
   acknowledgePurchase?: (purchaseToken: string) => boolean | Promise<boolean> | void;
-  queryPurchases?: () => void | Promise<PlayPurchase[]>;
+  queryPurchasesAsync?: () =>
+    | void
+    | string
+    | PlayPurchase[]
+    | Promise<string | PlayPurchase[] | void>;
+  queryPurchases?: () =>
+    | void
+    | string
+    | PlayPurchase[]
+    | Promise<string | PlayPurchase[] | void>;
   queryProductDetailsAsync?: () => Promise<PlayItemDetails[] | unknown>;
   getProductDetails?: () => Promise<PlayItemDetails[] | unknown>;
+  setPremium?: (isPremium: boolean) => void;
   openSubscriptionManagement?: () => void;
 };
 
@@ -151,7 +165,10 @@ declare global {
     Android?: NativeAndroidBillingBridge;
     triggerPurchase?: (productId: string, basePlanId?: string) => Promise<boolean>;
     updateSubscriptionUI?: (payloadOrIsPro: boolean | NativeSubscriptionPayload) => void;
-    onPurchasesUpdated?: (purchases: PlayPurchase | PlayPurchase[] | null | undefined) => Promise<void>;
+    onPurchasesUpdated?: (
+      purchases: string | PlayPurchase | PlayPurchase[] | null | undefined
+    ) => Promise<void>;
+    queryPurchasesAsync?: () => Promise<PlayPurchase[]>;
     updateProductDetails?: (details: unknown) => void;
     setProductDetails?: (details: unknown) => void;
     queryProductDetailsAsync?: () => Promise<SubscriptionPlan[]>;
@@ -162,6 +179,15 @@ export const SUBSCRIPTION_UPDATED_EVENT = "nume:subscription-updated";
 export const TRIGGER_PURCHASE_EVENT = "nume:trigger-purchase";
 
 const VALID_PRODUCT_IDS = new Set(["premium_weekly", "premium_monthly"]);
+
+function getPurchaseProductId(purchase: Partial<PlayPurchase>): string {
+  if (purchase.itemId) return purchase.itemId;
+  if (purchase.productId) return purchase.productId;
+  if (Array.isArray(purchase.products) && typeof purchase.products[0] === "string") {
+    return purchase.products[0];
+  }
+  return "";
+}
 
 function isValidSubscriptionItem(itemId?: string): boolean {
   if (!itemId) return false;
@@ -177,6 +203,72 @@ function isPurchaseStatePurchased(state?: string | number): boolean {
   if (state === undefined || state === null) return true; // Digital Goods listPurchases returns active owned purchases
   if (typeof state === "number") return state === 1; // Google Play Billing PurchaseState.PURCHASED = 1
   return state.toUpperCase() === "PURCHASED";
+}
+
+function isPurchaseExpired(purchase: Partial<PlayPurchase>): boolean {
+  if (typeof purchase.expiryTimeMillis === "number" && purchase.expiryTimeMillis > 0) {
+    return purchase.expiryTimeMillis <= Date.now();
+  }
+  if (typeof purchase.expiryTime === "string" && purchase.expiryTime.trim()) {
+    const parsed = Date.parse(purchase.expiryTime);
+    if (!Number.isNaN(parsed)) {
+      return parsed <= Date.now();
+    }
+  }
+  return false;
+}
+
+function isPurchaseActive(purchase: Partial<PlayPurchase> | null | undefined): purchase is PlayPurchase {
+  if (!purchase) return false;
+  const productId = getPurchaseProductId(purchase);
+  return (
+    Boolean(purchase.purchaseToken) &&
+    isValidSubscriptionItem(productId) &&
+    isPurchaseStatePurchased(purchase.purchaseState) &&
+    !isPurchaseExpired(purchase)
+  );
+}
+
+function parseRawPurchases(raw: unknown): PlayPurchase[] | null {
+  if (raw === undefined || raw === null) return null;
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    try {
+      value = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(value)) return null;
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
+    .map((entry) => {
+      const products = Array.isArray(entry.products)
+        ? entry.products.filter((p): p is string => typeof p === "string")
+        : undefined;
+      const itemId = String(
+        entry.itemId || entry.productId || (products && products[0]) || ""
+      );
+      return {
+        itemId,
+        productId: typeof entry.productId === "string" ? entry.productId : itemId || undefined,
+        products,
+        purchaseToken: String(entry.purchaseToken || entry.token || ""),
+        acknowledgeState:
+          typeof entry.acknowledgeState === "string" ? entry.acknowledgeState : undefined,
+        purchaseState:
+          typeof entry.purchaseState === "string" || typeof entry.purchaseState === "number"
+            ? entry.purchaseState
+            : undefined,
+        isAcknowledged:
+          typeof entry.isAcknowledged === "boolean" ? entry.isAcknowledged : undefined,
+        expiryTime: typeof entry.expiryTime === "string" ? entry.expiryTime : undefined,
+        expiryTimeMillis:
+          typeof entry.expiryTimeMillis === "number" ? entry.expiryTimeMillis : undefined,
+      };
+    });
 }
 
 function isPurchaseAlreadyAcknowledged(purchase: PlayPurchase): boolean {
@@ -449,6 +541,8 @@ function persistGrantedSubscription(
     if (purchaseToken) {
       localStorage.setItem("play_subscription_token", purchaseToken);
     }
+    const nativeBridge = window.AndroidBilling ?? window.Android;
+    nativeBridge?.setPremium?.(true);
   } catch {
     // ignore storage access issues
   }
@@ -535,12 +629,13 @@ export async function processVerifiedPlayPurchase(
   purchase: PlayPurchase,
   service?: DigitalGoodsService | null
 ): Promise<boolean> {
-  if (!purchase.purchaseToken || !isPurchaseStatePurchased(purchase.purchaseState)) {
+  if (!isPurchaseActive(purchase)) {
     return false;
   }
 
-  const productId = isValidSubscriptionItem(purchase.itemId)
-    ? purchase.itemId
+  const rawItemId = getPurchaseProductId(purchase);
+  const productId = isValidSubscriptionItem(rawItemId)
+    ? rawItemId
     : "premium_monthly";
 
   console.info("[PlayBilling] processVerifiedPlayPurchase received verified purchase", {
@@ -589,6 +684,7 @@ export function clearLocalEntitlementKeys(): void {
     for (const key of ENTITLEMENT_STORAGE_KEYS) {
       localStorage.removeItem(key);
     }
+    localStorage.setItem("isPremium", "false");
     clearLocalSubscriptionMetadata();
   } catch {
     // ignore storage issues
@@ -611,6 +707,9 @@ export function hasLocalActiveEntitlement(): boolean {
     clearLocalEntitlementKeys();
     return false;
   }
+  if (localStorage.getItem("isPremium") === "false") {
+    return false;
+  }
   const meta = readLocalSubscriptionMetadata();
   const premiumUnlimited = localStorage.getItem("premium_unlimited");
   return (
@@ -624,70 +723,93 @@ export function hasLocalActiveEntitlement(): boolean {
   );
 }
 
+export interface PlaySubscriptionCheckResult {
+  active: boolean;
+  authoritative: boolean;
+  purchases: PlayPurchase[];
+}
+
 /**
- * Checks Google Play Digital Goods API or native Android billing for active subscriptions on startup
- * and acknowledges any unacknowledged PURCHASED items.
- * If offline (device offline or in-app Offline toggle), keeps saved active subscription unlocked without
- * calling Google Play Billing until online verification explicitly reports cancellation.
+ * Production startup & lifecycle subscription check using Google Play `queryPurchasesAsync()`
+ * (via Digital Goods API `listPurchases()` or native Android `queryPurchasesAsync()` / `queryPurchases()`).
+ * - If device is genuinely offline (`navigator.onLine === false`), preserves existing active `isPremium`.
+ * - If Play responds with NO active (PURCHASED & unexpired) subscription (handles user cancellation,
+ *   expiry, and license-tester auto-cancel), immediately sets `isPremium = false` and revokes PRO.
  */
-export async function hasActivePlaySubscription(service?: DigitalGoodsService): Promise<boolean> {
-  if (isEffectiveOffline()) {
-    return hasLocalActiveEntitlement();
+export async function checkPlaySubscriptionStatus(
+  service?: DigitalGoodsService
+): Promise<PlaySubscriptionCheckResult> {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return {
+      active: hasLocalActiveEntitlement(),
+      authoritative: false,
+      purchases: [],
+    };
   }
 
-  if (isPlayBillingAvailable()) {
+  // 1. Google Play Digital Goods API (TWA / Play Store WebView)
+  if (isPlayBillingAvailable() || service) {
     try {
       const billing = service ?? (await getPlayBillingService());
       if (billing && typeof billing.listPurchases === "function") {
-        const purchases = await billing.listPurchases();
-        const activePurchase = purchases.find(
-          (purchase) =>
-            Boolean(purchase.purchaseToken) &&
-            isValidSubscriptionItem(purchase.itemId) &&
-            isPurchaseStatePurchased(purchase.purchaseState)
-        );
+        const purchases = parseRawPurchases(await billing.listPurchases()) ?? [];
+        const activePurchase = purchases.find(isPurchaseActive);
 
         if (activePurchase) {
           await processVerifiedPlayPurchase(activePurchase, billing);
-          return true;
+          return { active: true, authoritative: true, purchases };
         }
 
-        // Google Play confirmed no active subscription (cancelled/expired/refunded):
-        // automatically revoke local entitlement immediately with no manual button needed.
-        resetPlaySubscription(true, "cancelled");
-        return false;
+        // No active subscription found (user cancellation, expiry, or test auto-cancel):
+        // explicitly set isPremium = false.
+        resetPlaySubscription(true, "expired");
+        return { active: false, authoritative: true, purchases: [] };
       }
     } catch (e) {
-      console.warn("[PlayBilling] Error querying Google Play subscriptions (falling back to saved local status):", e);
-      return hasLocalActiveEntitlement();
+      console.warn(
+        "[PlayBilling] Error querying Google Play subscriptions (falling back to saved local status):",
+        e
+      );
+      return {
+        active: hasLocalActiveEntitlement(),
+        authoritative: false,
+        purchases: [],
+      };
     }
   }
 
-  // Check native Android bridge queryPurchases if it returns an array of purchases
+  // 2. Native Android Billing Bridge (`queryPurchasesAsync` or `queryPurchases`)
   const nativeBridge =
     typeof window !== "undefined" ? (window.AndroidBilling ?? window.Android) : undefined;
-  if (nativeBridge && typeof nativeBridge.queryPurchases === "function") {
+  const nativeQueryFn = nativeBridge?.queryPurchasesAsync ?? nativeBridge?.queryPurchases;
+  if (nativeBridge && typeof nativeQueryFn === "function") {
     try {
-      const nativePurchases = await Promise.resolve(nativeBridge.queryPurchases());
-      if (Array.isArray(nativePurchases)) {
-        const activeNative = nativePurchases.find(
-          (purchase) =>
-            Boolean(purchase.purchaseToken) &&
-            isValidSubscriptionItem(purchase.itemId) &&
-            isPurchaseStatePurchased(purchase.purchaseState)
-        );
+      const raw = await Promise.resolve(nativeQueryFn.call(nativeBridge));
+      const nativePurchases = parseRawPurchases(raw);
+      if (nativePurchases !== null) {
+        const activeNative = nativePurchases.find(isPurchaseActive);
         if (activeNative) {
           await processVerifiedPlayPurchase(activeNative, null);
-          return true;
+          return { active: true, authoritative: true, purchases: nativePurchases };
         }
-        resetPlaySubscription(true, "cancelled");
-        return false;
+        // Native BillingClient.queryPurchasesAsync() returned no active subscription: set isPremium = false
+        resetPlaySubscription(true, "expired");
+        return { active: false, authoritative: true, purchases: [] };
       }
     } catch (e) {
       console.warn("[PlayBilling] Error querying native Android purchases:", e);
     }
   }
 
+  if (isEffectiveOffline()) {
+    return {
+      active: hasLocalActiveEntitlement(),
+      authoritative: false,
+      purchases: [],
+    };
+  }
+
+  // 3. Backend Play Developer API verification fallback for stored purchaseToken
   const storedToken =
     typeof window !== "undefined" ? localStorage.getItem("play_subscription_token") : null;
   const storedTier =
@@ -695,20 +817,59 @@ export async function hasActivePlaySubscription(service?: DigitalGoodsService): 
   if (storedToken) {
     const backendStatus = await verifyPlayPurchaseWithBackend(storedToken, storedTier);
     if (backendStatus && backendStatus.active === false) {
-      resetPlaySubscription(true, backendStatus.status || "cancelled");
-      return false;
+      resetPlaySubscription(true, backendStatus.status || "expired");
+      return { active: false, authoritative: true, purchases: [] };
     }
     if (backendStatus && backendStatus.active === true) {
+      const resolvedTier = backendStatus.productId || storedTier || "premium_monthly";
       persistGrantedSubscription(
-        backendStatus.productId || storedTier || "premium_monthly",
+        resolvedTier,
         storedToken,
         backendStatus.expiresAt || undefined
       );
-      return true;
+      return {
+        active: true,
+        authoritative: true,
+        purchases: [
+          {
+            itemId: resolvedTier,
+            purchaseToken: storedToken,
+            purchaseState: "PURCHASED",
+            isAcknowledged: backendStatus.acknowledged ?? true,
+            expiryTime: backendStatus.expiresAt || undefined,
+          },
+        ],
+      };
     }
   }
 
-  return hasLocalActiveEntitlement();
+  return {
+    active: hasLocalActiveEntitlement(),
+    authoritative: false,
+    purchases: [],
+  };
+}
+
+/**
+ * Standard Google Play startup purchase query (`queryPurchasesAsync`).
+ * Checks active subscriptions, acknowledges unacknowledged purchases, and sets
+ * `isPremium = false` whenever Play reports no active subscription.
+ */
+export async function queryPurchasesAsync(
+  service?: DigitalGoodsService
+): Promise<PlayPurchase[]> {
+  const result = await checkPlaySubscriptionStatus(service);
+  return result.purchases;
+}
+
+/**
+ * Checks Google Play Digital Goods API or native Android billing for active subscriptions on startup
+ * and acknowledges any unacknowledged PURCHASED items.
+ * If offline, preserves saved active subscription until online verification explicitly reports cancellation/expiry.
+ */
+export async function hasActivePlaySubscription(service?: DigitalGoodsService): Promise<boolean> {
+  const result = await checkPlaySubscriptionStatus(service);
+  return result.active;
 }
 
 export async function buySubscription(
@@ -845,6 +1006,15 @@ export function resetPlaySubscription(
 ): void {
   try {
     clearLocalEntitlementKeys();
+    localStorage.setItem("isPremium", "false");
+
+    const nativeBridge =
+      typeof window !== "undefined" ? (window.AndroidBilling ?? window.Android) : undefined;
+    try {
+      nativeBridge?.setPremium?.(false);
+    } catch {
+      // ignore bridge access issues
+    }
 
     void syncSubscriptionToProfile({
       subscription_status: status,
@@ -938,21 +1108,27 @@ export function registerWindowBillingBridge(): void {
   };
 
   window.onPurchasesUpdated = async (
-    purchases: PlayPurchase | PlayPurchase[] | null | undefined
+    purchases: string | PlayPurchase | PlayPurchase[] | null | undefined
   ): Promise<void> => {
-    const list = !purchases ? [] : Array.isArray(purchases) ? purchases : [purchases];
+    let parsed: PlayPurchase | PlayPurchase[] | null | undefined = purchases;
+    if (typeof purchases === "string") {
+      const normalized = parseRawPurchases(purchases);
+      parsed = normalized ?? [];
+    }
+    const list = !parsed ? [] : Array.isArray(parsed) ? parsed : [parsed];
     let grantedAny = false;
     for (const p of list) {
-      if (p && isPurchaseStatePurchased(p.purchaseState) && p.purchaseToken) {
+      if (isPurchaseActive(p)) {
         const ok = await processVerifiedPlayPurchase(p);
         if (ok) grantedAny = true;
       }
     }
     if (!grantedAny) {
-      resetPlaySubscription(true, "cancelled");
+      resetPlaySubscription(true, "expired");
     }
   };
 
+  window.queryPurchasesAsync = () => queryPurchasesAsync();
   window.queryProductDetailsAsync = queryProductDetailsAsync;
   window.updateProductDetails = (details: unknown) => {
     parseAndApplyProductDetails(details);

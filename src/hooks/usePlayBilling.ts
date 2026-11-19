@@ -3,7 +3,8 @@ import {
   SubscriptionPlan,
   getCachedProductPlans,
   queryProductDetailsAsync,
-  hasActivePlaySubscription,
+  queryPurchasesAsync,
+  checkPlaySubscriptionStatus,
   hasLocalActiveEntitlement,
   buySubscription,
   isPlayBillingAvailable,
@@ -47,13 +48,18 @@ export function usePlayBilling() {
   const applySubscriptionMeta = useCallback((active: boolean, meta?: ProfileSubscriptionRecord | null) => {
     const fallback = meta ?? readLocalSubscriptionMetadata();
     setIsPro(active);
-    setSubscriptionStatus(active ? "active" : fallback.subscription_status === "active" ? "inactive" : fallback.subscription_status);
-    setSubscriptionTier(active ? fallback.subscription_tier || localStorage.getItem("billing_plan_id") || "premium_monthly" : null);
+    setSubscriptionStatus(
+      active ? "active" : fallback.subscription_status === "active" ? "inactive" : fallback.subscription_status
+    );
+    setSubscriptionTier(
+      active ? fallback.subscription_tier || localStorage.getItem("billing_plan_id") || "premium_monthly" : null
+    );
     setSubscriptionExpiresAt(active ? fallback.subscription_expires_at : fallback.subscription_expires_at);
   }, []);
 
   const checkSubscription = useCallback(async () => {
-    if (isEffectiveOffline()) {
+    // Keep saved active subscription intact while the device is offline
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
       const active = hasLocalActiveEntitlement();
       applySubscriptionMeta(active, readLocalSubscriptionMetadata());
       return active;
@@ -62,10 +68,29 @@ export function usePlayBilling() {
     setLoading(true);
     setError(null);
     try {
-      const [playActive, profileMeta] = await Promise.all([
-        hasActivePlaySubscription(),
-        fetchProfileSubscription(),
-      ]);
+      // On app start, call queryPurchasesAsync() / Digital Goods listPurchases()
+      const playResult = await checkPlaySubscriptionStatus();
+
+      if (playResult.active) {
+        applySubscriptionMeta(true, readLocalSubscriptionMetadata());
+        return true;
+      }
+
+      // If Google Play / native queryPurchasesAsync() definitively returned no active subscription
+      // (cancellation, expiry, or license-tester auto-cancel), set isPremium = false immediately.
+      if (playResult.authoritative) {
+        resetPlaySubscription(false, "expired");
+        applySubscriptionMeta(false, readLocalSubscriptionMetadata());
+        return false;
+      }
+
+      if (isEffectiveOffline()) {
+        const active = hasLocalActiveEntitlement();
+        applySubscriptionMeta(active, readLocalSubscriptionMetadata());
+        return active;
+      }
+
+      const profileMeta = await fetchProfileSubscription();
 
       const profileRevoked =
         profileMeta?.subscription_status === "cancelled" ||
@@ -78,14 +103,13 @@ export function usePlayBilling() {
           new Date(profileMeta.subscription_expires_at).getTime() > Date.now());
 
       let active = false;
-      if (playActive) {
-        active = true;
-      } else if (profileRevoked) {
+      if (profileRevoked) {
         resetPlaySubscription(false, profileMeta.subscription_status);
         active = false;
       } else if (profileActive && !isPlayBillingAvailable()) {
         active = true;
       } else {
+        resetPlaySubscription(false, "expired");
         active = false;
       }
 
@@ -186,7 +210,7 @@ export function usePlayBilling() {
   );
 
   const cancelSub = useCallback(() => {
-    resetPlaySubscription(true);
+    resetPlaySubscription(true, "cancelled");
     setIsPro(false);
     setSubscriptionStatus("inactive");
     setSubscriptionTier(null);
@@ -204,6 +228,7 @@ export function usePlayBilling() {
     error,
     plans,
     checkSubscription,
+    queryPurchasesAsync,
     purchasePlan,
     cancelSubscription: cancelSub,
     isAvailable: isPlayBillingAvailable(),

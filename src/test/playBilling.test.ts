@@ -1,10 +1,12 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
 import {
   SUBSCRIPTIONS,
   SUBSCRIPTION_TAG,
   isPlayBillingAvailable,
   buySubscription,
   hasActivePlaySubscription,
+  queryPurchasesAsync,
   resetPlaySubscription,
   WEEKLY_PRODUCT,
   MONTHLY_PRODUCT,
@@ -12,6 +14,7 @@ import {
   queryProductDetailsAsync,
   parseAndApplyProductDetails,
 } from "@/lib/playBilling";
+import { usePlayBilling } from "@/hooks/usePlayBilling";
 import {
   isWithinTrialPeriod,
   isAppPermanentlyBlocked,
@@ -240,7 +243,7 @@ describe("Google Play Digital Goods API, Subscriptions & Dynamic Pricing", () =>
     expect(localStorage.getItem("play_subscription_token")).toBeNull();
     expect(localStorage.getItem("billing_status")).toBeNull();
     expect(localStorage.getItem("billing_plan_id")).toBeNull();
-    expect(localStorage.getItem("isPremium")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBe("false");
   });
 
   it("allows free trial uses and blocks when feature trials are exhausted", () => {
@@ -272,7 +275,7 @@ describe("Google Play Digital Goods API, Subscriptions & Dynamic Pricing", () =>
     const active = await hasActivePlaySubscription();
     expect(active).toBe(false);
     expect(localStorage.getItem("premium_unlimited")).toBeNull();
-    expect(localStorage.getItem("isPremium")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBe("false");
     expect(localStorage.getItem("subscription_active")).toBeNull();
     expect(localStorage.getItem("billing_status")).toBeNull();
     expect(localStorage.getItem("play_subscription_token")).toBeNull();
@@ -291,13 +294,100 @@ describe("Google Play Digital Goods API, Subscriptions & Dynamic Pricing", () =>
     const active = await hasActivePlaySubscription();
     expect(active).toBe(false);
     expect(localStorage.getItem("premium_unlimited")).toBeNull();
-    expect(localStorage.getItem("isPremium")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBe("false");
 
     localStorage.setItem("premium_unlimited", "true");
     localStorage.setItem("isPremium", "true");
     await window.onPurchasesUpdated?.([]);
     expect(localStorage.getItem("premium_unlimited")).toBeNull();
-    expect(localStorage.getItem("isPremium")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBe("false");
+  });
+
+  it("sets isPremium = false when native queryPurchasesAsync returns empty, cancelled, or expired purchases", async () => {
+    const setPremiumSpy = vi.fn();
+    localStorage.setItem("isPremium", "true");
+    localStorage.setItem("premium_unlimited", "true");
+    localStorage.setItem("play_subscription_token", "EXPIRED_TOK");
+
+    // 1. Test auto-cancel / user cancellation returning empty JSON array from Android @JavascriptInterface
+    window.AndroidBilling = {
+      queryPurchasesAsync: vi.fn().mockResolvedValue("[]"),
+      setPremium: setPremiumSpy,
+    };
+
+    const resultEmpty = await queryPurchasesAsync();
+    expect(resultEmpty).toEqual([]);
+    expect(localStorage.getItem("isPremium")).toBe("false");
+    expect(localStorage.getItem("premium_unlimited")).toBeNull();
+    expect(localStorage.getItem("play_subscription_token")).toBeNull();
+    expect(setPremiumSpy).toHaveBeenCalledWith(false);
+
+    // 2. Expired purchase timestamp or non-PURCHASED state must also set isPremium = false
+    localStorage.setItem("isPremium", "true");
+    window.AndroidBilling = {
+      queryPurchasesAsync: vi.fn().mockResolvedValue([
+        {
+          productId: "premium_monthly",
+          purchaseToken: "TOK_EXPIRED",
+          purchaseState: "PURCHASED",
+          expiryTimeMillis: Date.now() - 60_000,
+        },
+        {
+          productId: "premium_weekly",
+          purchaseToken: "TOK_CANCELLED",
+          purchaseState: "CANCELLED",
+        },
+      ]),
+      setPremium: setPremiumSpy,
+    };
+
+    expect(await hasActivePlaySubscription()).toBe(false);
+    expect(localStorage.getItem("isPremium")).toBe("false");
+  });
+
+  it("grants PRO and acknowledges when queryPurchasesAsync returns an active JSON purchase", async () => {
+    const ackSpy = vi.fn().mockResolvedValue(true);
+    const setPremiumSpy = vi.fn();
+    window.AndroidBilling = {
+      queryPurchasesAsync: vi.fn().mockResolvedValue(
+        JSON.stringify([
+          {
+            products: ["premium_weekly"],
+            purchaseToken: "ACTIVE_JSON_TOK_777",
+            purchaseState: 1,
+            isAcknowledged: false,
+            expiryTimeMillis: Date.now() + 7 * 24 * 60 * 60 * 1000,
+          },
+        ])
+      ),
+      acknowledgePurchase: ackSpy,
+      setPremium: setPremiumSpy,
+    };
+
+    const purchases = await queryPurchasesAsync();
+    expect(purchases).toHaveLength(1);
+    expect(localStorage.getItem("isPremium")).toBe("true");
+    expect(localStorage.getItem("billing_plan_id")).toBe("premium_weekly");
+    expect(ackSpy).toHaveBeenCalledWith("ACTIVE_JSON_TOK_777");
+    expect(setPremiumSpy).toHaveBeenCalledWith(true);
+  });
+
+  it("calls queryPurchasesAsync on app start in usePlayBilling and revokes stale isPremium when cancelled", async () => {
+    localStorage.setItem("isPremium", "true");
+    localStorage.setItem("subscription_active", "true");
+
+    const querySpy = vi.fn().mockResolvedValue([]);
+    window.AndroidBilling = {
+      queryPurchasesAsync: querySpy,
+    };
+
+    const { result } = renderHook(() => usePlayBilling());
+
+    await waitFor(() => {
+      expect(querySpy).toHaveBeenCalled();
+      expect(result.current.isPro).toBe(false);
+    });
+    expect(localStorage.getItem("isPremium")).toBe("false");
   });
 
   it("never drops premium for active subscribers while offline until explicitly cancelled", async () => {
@@ -335,6 +425,6 @@ describe("Google Play Digital Goods API, Subscriptions & Dynamic Pricing", () =>
       })
     );
     expect(await hasActivePlaySubscription()).toBe(false);
-    expect(localStorage.getItem("isPremium")).toBeNull();
+    expect(localStorage.getItem("isPremium")).toBe("false");
   });
 });
