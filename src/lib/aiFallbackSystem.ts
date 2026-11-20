@@ -1,10 +1,17 @@
 import { solveEquation, EquationSolution } from "./equationSolver";
 import { convertMeasurement, UnitCategory } from "./unitConversion";
 import { isEffectiveOffline } from "./networkMode";
+import {
+  extractBestMathEquation,
+  performFastMathOcr,
+  prepareImageForVision,
+  preprocessImageForOcr,
+} from "./ocrImageProcessor";
 
 export const CIRCUIT_BREAKER_KEY = "lovable_ai_credits_depleted_month";
 
 export type AiProviderName =
+  | "Gemini Vision AI"
   | "Lovable Cloud"
   | "Pollinations AI (Keyless)"
   | "Kilo AI Gateway"
@@ -256,9 +263,73 @@ function parseAiSteps(rawText: string, fallbackSummary: string): { summary: stri
   };
 }
 
+function isLikelyComplexMath(input: string): boolean {
+  if (!input || !/\d/.test(input)) return false;
+  const nonMathWords = input
+    .split(/[\s+\-*^/()=.,]+/)
+    .filter((w) => /^[a-zA-Z]{2,}$/.test(w) && !/^(sqrt|cbrt|sin|cos|tan|asin|acos|atan|log|log10|ln|abs|exp|pi|dx|dy|lim)$/i.test(w));
+  if (nonMathWords.length > 2) return false;
+  return /[xyXY]|sqrt|sin|cos|tan|log|ln|\^3|³/.test(input) && /[=+\-*^/()]/.test(input);
+}
+
+interface ServerMathApiResponse {
+  detectedEquation?: string;
+  mathType?: string;
+  summary?: string;
+  steps?: string[];
+  formulaNote?: string;
+  roots?: number[];
+}
+
+async function callServerMathText(equation: string): Promise<ServerMathApiResponse | null> {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 12000) : null;
+  try {
+    const res = await fetch("/api/solve-math-text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ equation }),
+      signal: controller?.signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as ServerMathApiResponse;
+    if (!data?.summary) return null;
+    return data;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function callServerMathImage(
+  base64: string,
+  mimeType: string
+): Promise<ServerMathApiResponse | null> {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 18000) : null;
+  try {
+    const res = await fetch("/api/solve-math-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageBase64: base64, mimeType }),
+      signal: controller?.signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as ServerMathApiResponse;
+    if (!data || data.mathType === "unreadable") return null;
+    return data;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Main Silent AI Solver Fallback Pipeline for Equation Solving
- * Always calls Lovable Cloud credits first -> Pollinations -> Kilo -> OVHcloud -> Wikipedia -> Local Math.
+ * Always calls local deterministic solver first for linear/quadratic/arithmetic,
+ * plus Lovable Cloud / Gemini / Pollinations / Kilo / OVHcloud / Wikipedia for theory & complex math.
  * Guaranteed zero error: never throws or crashes.
  */
 export async function solveEquationWithAiFallback(equation: string): Promise<EquationAiResult> {
@@ -278,11 +349,38 @@ export async function solveEquationWithAiFallback(equation: string): Promise<Equ
     };
   }
 
-  // If local syntax was invalid or unparseable, return error summary immediately
+  // If local syntax was unparseable, check if it is valid higher-order math (cubic, system, trig, calculus)
   if (
     localBase.summary === "Handwriting not detected clearly. Please rewrite." ||
     localBase.summary === "Invalid Equation Syntax"
   ) {
+    if (!isEffectiveOffline() && isLikelyComplexMath(equation)) {
+      const serverSolved = await callServerMathText(equation);
+      if (serverSolved?.summary) {
+        return {
+          summary: serverSolved.summary,
+          steps:
+            Array.isArray(serverSolved.steps) && serverSolved.steps.length > 0
+              ? serverSolved.steps
+              : ["Solved via Gemini Math Engine."],
+          roots: Array.isArray(serverSolved.roots) ? serverSolved.roots : [],
+          providerUsed: "Gemini Vision AI",
+          formulaNote: serverSolved.formulaNote,
+        };
+      }
+      const complexPrompt = `Solve the following mathematical expression or equation(s) step-by-step and state the final answer clearly: ${equation}`;
+      const pollText = await callPollinationsAi(complexPrompt);
+      if (pollText) {
+        const parsed = parseAiSteps(pollText, "Solved");
+        return {
+          summary: parsed.summary,
+          steps: parsed.steps,
+          roots: [],
+          providerUsed: "Pollinations AI (Keyless)",
+        };
+      }
+    }
+
     return {
       ...localBase,
       summary: "Handwriting not detected clearly. Please rewrite.",
@@ -650,4 +748,106 @@ export async function convertWithAiFallback(
     formattedResult: formatted,
     providerUsed: "Local Deterministic Engine",
   };
+}
+
+export interface ScannedMathResult {
+  detectedEquation: string;
+  solution: EquationAiResult | null;
+  error?: string;
+}
+
+/**
+ * Full handwritten math scanner & solver pipeline for Camera Input and Photo Upload:
+ * 1. Online: Sends clean orientation-corrected photo to server-side Gemini Vision (`/api/solve-math-image`)
+ *    and cross-verifies linear/quadratic/arithmetic equations deterministically via `solveEquation`.
+ * 2. Offline or unavailable server: Preprocesses contrast locally (`preprocessImageForOcr`) + multi-angle
+ *    Tesseract math OCR (`performFastMathOcr`) + `extractBestMathEquation` + deterministic/AI fallback solving.
+ */
+export async function scanAndSolveHandwrittenMath(file: File): Promise<ScannedMathResult> {
+  // 1. Primary path when online: Multimodal Gemini Vision
+  if (!isEffectiveOffline()) {
+    try {
+      const { base64, mimeType } = await prepareImageForVision(file);
+      if (base64) {
+        const visionRes = await callServerMathImage(base64, mimeType);
+        const detected = visionRes?.detectedEquation?.trim() || "";
+        if (visionRes && detected) {
+          // Cross-verify deterministically when local solver supports the equation type
+          try {
+            const deterministic = solveEquation(detected);
+            return {
+              detectedEquation: detected,
+              solution: {
+                ...deterministic,
+                providerUsed: "Gemini Vision AI",
+                formulaNote: visionRes.formulaNote,
+              },
+            };
+          } catch {
+            // Higher-order math (cubic, simultaneous, trigonometry, calculus, etc.)
+            if (visionRes.summary) {
+              return {
+                detectedEquation: detected,
+                solution: {
+                  summary: visionRes.summary,
+                  steps:
+                    Array.isArray(visionRes.steps) && visionRes.steps.length > 0
+                      ? visionRes.steps
+                      : ["Analyzed and solved directly from scanned handwriting."],
+                  roots: Array.isArray(visionRes.roots) ? visionRes.roots : [],
+                  providerUsed: "Gemini Vision AI",
+                  formulaNote: visionRes.formulaNote,
+                },
+              };
+            }
+          }
+        }
+      }
+    } catch {
+      // Fall through silently to local OCR pipeline
+    }
+  }
+
+  // 2. Offline / fallback path: Contrast enhancement + multi-angle Tesseract OCR
+  try {
+    const processedBlob = await preprocessImageForOcr(file);
+    const ocrResult = await performFastMathOcr(processedBlob);
+    let candidate = extractBestMathEquation(ocrResult.text);
+
+    if ((!candidate || ocrResult.confidence < 0.65) && ocrResult.text.trim() && !isEffectiveOffline()) {
+      const repaired = await repairOcrWithAiFallback(ocrResult.text);
+      const repairedCandidate = extractBestMathEquation(repaired) || repaired;
+      if (repairedCandidate) {
+        candidate = repairedCandidate;
+      }
+    }
+
+    if (!candidate) {
+      return {
+        detectedEquation: "",
+        solution: null,
+        error: "Handwriting not detected clearly. Please capture a clearer photo or edit manually.",
+      };
+    }
+
+    const solved = await solveEquationWithAiFallback(candidate);
+    if (solved.summary === "Handwriting not detected clearly. Please rewrite.") {
+      return {
+        detectedEquation: candidate,
+        solution: null,
+        error: "Handwriting detected partially — please review or edit the equation and tap Solve.",
+      };
+    }
+
+    return {
+      detectedEquation: candidate,
+      solution: solved,
+    };
+  } catch {
+    return {
+      detectedEquation: "",
+      solution: null,
+      error: "Could not read photo. Please try a brighter, closer shot or type the equation.",
+    };
+  }
 }

@@ -1110,11 +1110,8 @@ export function registerWindowBillingBridge(): void {
   window.onPurchasesUpdated = async (
     purchases: string | PlayPurchase | PlayPurchase[] | null | undefined
   ): Promise<void> => {
-    let parsed: PlayPurchase | PlayPurchase[] | null | undefined = purchases;
-    if (typeof purchases === "string") {
-      const normalized = parseRawPurchases(purchases);
-      parsed = normalized ?? [];
-    }
+    const parsed: PlayPurchase | PlayPurchase[] | null | undefined =
+      typeof purchases === "string" ? (parseRawPurchases(purchases) ?? []) : purchases;
     const list = !parsed ? [] : Array.isArray(parsed) ? parsed : [parsed];
     let grantedAny = false;
     for (const p of list) {

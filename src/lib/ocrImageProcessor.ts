@@ -77,6 +77,77 @@ function enhanceHandwritingContrast(data: Uint8ClampedArray, width: number, heig
   }
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  if (typeof blob.arrayBuffer === "function") {
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+    }
+    if (typeof btoa === "function") {
+      return btoa(binary);
+    }
+  }
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Unable to read photo."));
+    reader.readAsDataURL(blob);
+  });
+  return dataUrl.replace(/^data:[^;]+;base64,/, "");
+}
+
+/**
+ * Converts a camera photo or uploaded image File/Blob into a clean, orientation-corrected
+ * base64 JPEG (max 1280px) for multimodal AI math reading without harsh binarization.
+ */
+export async function prepareImageForVision(
+  file: Blob | File
+): Promise<{ base64: string; mimeType: string }> {
+  try {
+    if (typeof window !== "undefined" && "createImageBitmap" in window) {
+      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const maxDim = 1280;
+      let width = bitmap.width;
+      let height = bitmap.height;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        bitmap.close?.();
+        const resizedBlob = await new Promise<Blob>((resolve) =>
+          canvas.toBlob((b) => resolve(b || file), "image/jpeg", 0.88)
+        );
+        return {
+          base64: await blobToBase64(resizedBlob),
+          mimeType: resizedBlob.type || "image/jpeg",
+        };
+      }
+      bitmap.close?.();
+    }
+  } catch {
+    // Fall back to direct byte read
+  }
+
+  return {
+    base64: await blobToBase64(file),
+    mimeType: file.type || "image/jpeg",
+  };
+}
+
 /**
  * Rescales raw multi-megapixel camera photos to max 1000px and applies contrast
  * enhancement for fast (< 200ms) and accurate OCR processing.
@@ -123,10 +194,17 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
   return new Promise((resolve) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
+    let settled = false;
+    const finish = (result: Blob) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish(file), 3000);
 
     img.onload = () => {
-      URL.revokeObjectURL(url);
-
       const maxDim = 1000;
       let width = img.width;
       let height = img.height;
@@ -147,7 +225,7 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
 
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        resolve(file);
+        finish(file);
         return;
       }
 
@@ -158,7 +236,7 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
 
       canvas.toBlob(
         (blob) => {
-          resolve(blob || file);
+          finish(blob || file);
         },
         "image/jpeg",
         0.9
@@ -166,8 +244,7 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
     };
 
     img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(file);
+      finish(file);
     };
 
     img.src = url;
@@ -339,6 +416,8 @@ export function normalizeMathOcrText(text: string): string {
     .replace(/[—–−]/g, "-")
     .replace(/[×·]/g, "*")
     .replace(/÷/g, "/")
+    .replace(/√\s*\(([^)]+)\)/g, "sqrt($1)")
+    .replace(/√\s*(\d+(?:\.\d+)?)/g, "sqrt($1)")
     .replace(/,/g, "")
     .replace(/\s+/g, " ");
 
@@ -484,6 +563,17 @@ export function extractBestMathEquation(rawOcr: string): string {
   // 4. Return line with digits and variables if available so user gets partial detected text
   for (const item of scoredLines) {
     if (/\d/.test(item.line) && /[xyXY]/.test(item.line)) {
+      return item.line;
+    }
+  }
+
+  // 5. Pure arithmetic/scientific expression with digits and math operators (e.g. 25 * 4 + 10, sqrt(144) + 8)
+  for (const item of scoredLines) {
+    if (
+      item.score > 0 &&
+      /\d/.test(item.line) &&
+      (/[+\-*^/]/.test(item.line) || /\b(sqrt|sin|cos|tan|log|ln)\b/i.test(item.line))
+    ) {
       return item.line;
     }
   }

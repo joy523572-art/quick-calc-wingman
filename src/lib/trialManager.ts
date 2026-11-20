@@ -23,6 +23,12 @@ export function getMaxFeatureTrials(featureKey: string): number {
 
 export const MAX_FEATURE_FREE_TRIALS = 3; // Default lifetime trials for non-converter features
 const FEATURE_TRIAL_PREFIX = "nume.feature_trials.";
+const EQUATION_TEST_PASS_ID = "2026-11-20-eq-1h";
+const EQUATION_TEST_PASS_DEADLINE = Date.parse("2026-11-20T18:15:00.000Z");
+const EQUATION_TEST_PASS_APPLIED_KEY = "nume.eq_test_pass_applied.v1";
+const EQUATION_TEST_PASS_EXPIRES_KEY = "nume.eq_test_pass_expires_at.v1";
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
 const ALL_FEATURE_KEYS = [
   "graph",
   "equation",
@@ -113,10 +119,81 @@ export function getFeatureTrialCount(featureKey: string): number {
   }
 }
 
+export function getEquationTestPassRemainingMs(now: number = Date.now()): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const rawExpires = localStorage.getItem(EQUATION_TEST_PASS_EXPIRES_KEY);
+    if (!rawExpires) return 0;
+    const expiresAt = Number(rawExpires);
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+      localStorage.removeItem(EQUATION_TEST_PASS_EXPIRES_KEY);
+      return 0;
+    }
+    return expiresAt - now;
+  } catch {
+    return 0;
+  }
+}
+
+export function isEquationTestPassActive(featureKey: string, now: number = Date.now()): boolean {
+  if (normalizeFeatureKey(featureKey) !== "equation") return false;
+  return getEquationTestPassRemainingMs(now) > 0;
+}
+
+/**
+ * Grants a one-time 1-hour Equation Solver test permission when the user's lifetime
+ * trials were already exhausted, preserving the underlying trial count / lock state
+ * so it automatically locks back to its previous state after 1 hour.
+ */
+export function maybeGrantOneHourEquationTestPass(
+  isSubscribed: boolean,
+  now: number = Date.now()
+): boolean {
+  if (typeof window === "undefined" || isSubscribed) return false;
+  try {
+    if (now >= EQUATION_TEST_PASS_DEADLINE) {
+      getEquationTestPassRemainingMs(now);
+      return false;
+    }
+
+    if (isEquationTestPassActive("equation", now)) {
+      return true;
+    }
+
+    if (localStorage.getItem(EQUATION_TEST_PASS_APPLIED_KEY) === EQUATION_TEST_PASS_ID) {
+      return false;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const urlLocked =
+      params.get("trial") === "expired" ||
+      params.get("lock") === "true" ||
+      params.get("lock") === "1";
+    if (urlLocked) return false;
+
+    const prevForceLock = localStorage.getItem("force_trial_lock") === "true";
+    const used = getFeatureTrialCount("equation");
+    const isLockedByTrials = prevForceLock || used >= getMaxFeatureTrials("equation");
+    if (!isLockedByTrials) {
+      return false;
+    }
+
+    localStorage.setItem(EQUATION_TEST_PASS_APPLIED_KEY, EQUATION_TEST_PASS_ID);
+    localStorage.setItem(EQUATION_TEST_PASS_EXPIRES_KEY, String(now + ONE_HOUR_MS));
+    window.dispatchEvent(new Event("nume:feature-trial-used"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function consumeFeatureTrial(featureKey: string): number {
   const key = normalizeFeatureKey(featureKey);
   if (typeof window === "undefined") return 0;
   if (key === "calculator" || key === "network") return 0;
+  if (isEquationTestPassActive(key)) {
+    return getFeatureTrialCount(key);
+  }
 
   try {
     const current = getFeatureTrialCount(key);
@@ -147,6 +224,10 @@ export function hasFeatureFreeTrials(featureKey: string, isSubscribed: boolean):
       params.get("lock") === "1"
     ) {
       return false;
+    }
+
+    if (isEquationTestPassActive(key)) {
+      return true;
     }
 
     if (localStorage.getItem("force_trial_lock") === "true") return false;
@@ -183,6 +264,11 @@ export function formatTrialTimeRemaining(featureKey: string = "graph"): string {
   if (featureKey === "calculator" || featureKey === "network") {
     return "Unlimited Free";
   }
+  if (isEquationTestPassActive(featureKey)) {
+    const remainingMs = getEquationTestPassRemainingMs();
+    const mins = Math.max(1, Math.ceil(remainingMs / 60000));
+    return `Test Access (${mins}m left)`;
+  }
   const remaining = getFeatureRemainingTrials(featureKey, false);
   const maxTrials = getMaxFeatureTrials(featureKey);
   if (remaining === 0 || remaining === Infinity) {
@@ -195,6 +281,8 @@ export function resetAllFeatureTrials(): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem("force_trial_lock");
+    localStorage.removeItem(EQUATION_TEST_PASS_EXPIRES_KEY);
+    localStorage.removeItem(EQUATION_TEST_PASS_APPLIED_KEY);
     ALL_FEATURE_KEYS.forEach((k) => {
       localStorage.removeItem(`${FEATURE_TRIAL_PREFIX}${k}`);
       removeCookieTrialCount(k);
@@ -208,6 +296,7 @@ export function resetAllFeatureTrials(): void {
 export function exhaustAllFeatureTrials(): void {
   if (typeof window === "undefined") return;
   try {
+    localStorage.removeItem(EQUATION_TEST_PASS_EXPIRES_KEY);
     localStorage.setItem("force_trial_lock", "true");
     ALL_FEATURE_KEYS.forEach((k) => {
       const max = getMaxFeatureTrials(k);

@@ -1,4 +1,4 @@
-import { parse } from "mathjs";
+import { evaluate, parse } from "mathjs";
 
 type Polynomial = [number, number, number];
 export type EquationSolution = { summary: string; steps: string[]; roots: number[] };
@@ -75,22 +75,52 @@ function polynomialFromExpression(expression: string): Polynomial {
   return visit(node);
 }
 
-/**
- * Sanitizes math input using a strict regex filter before it hits the math engine.
- * Converts math superscripts and unicode operators, then strips dictionary words (e.g., 'SALE') and non-math noise.
- */
-export function sanitizeMathInput(input: string): string {
-  if (!input) return "";
-  const preNormalized = input
+const KNOWN_MATH_WORDS = /\b(sqrt|cbrt|sin|cos|tan|asin|acos|atan|log10|log|ln|abs|exp|pi)\b/gi;
+
+function normalizeMathSymbols(input: string): string {
+  return input
     .replace(/＝/g, "=")
     .replace(/[⁰¹²³]/g, (digit) => `^${"⁰¹²³".indexOf(digit)}`)
     .replace(/[−–—]/g, "-")
     .replace(/[×·]/g, "*")
     .replace(/÷/g, "/")
-    .replace(/,/g, "")
-    .replace(/X/g, "x");
+    .replace(/√\s*\(([^)]+)\)/g, "sqrt($1)")
+    .replace(/√\s*(\d+(?:\.\d+)?)/g, "sqrt($1)")
+    .replace(/π/g, "pi")
+    .replace(/,/g, "");
+}
 
-  return preNormalized.replace(/[^0-9xXyYzZ+\-*/=.()^]/g, "");
+function hasUnknownAlgebraicVariable(expr: string): boolean {
+  const withoutFuncs = expr.replace(KNOWN_MATH_WORDS, " ");
+  return /[a-zA-Z]/.test(withoutFuncs);
+}
+
+/**
+ * Sanitizes math input using a strict regex filter before it hits the math engine.
+ * Converts math superscripts, unicode operators, and math functions, then strips dictionary words.
+ */
+export function sanitizeMathInput(input: string): string {
+  if (!input) return "";
+  const preNormalized = normalizeMathSymbols(input);
+
+  // Preserve recognized math function identifiers while stripping stray English words
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < preNormalized.length) {
+    const rest = preNormalized.slice(i);
+    const fnMatch = rest.match(/^(sqrt|cbrt|sin|cos|tan|asin|acos|atan|log10|log|ln|abs|exp|pi)\b/i);
+    if (fnMatch) {
+      tokens.push(fnMatch[1].toLowerCase());
+      i += fnMatch[1].length;
+      continue;
+    }
+    const ch = preNormalized[i];
+    if (/[0-9xXyYzZ+\-*/=.()^?%]/.test(ch)) {
+      tokens.push(ch === "X" ? "x" : ch);
+    }
+    i++;
+  }
+  return tokens.join("");
 }
 
 export function solveEquation(input: string): EquationSolution {
@@ -104,17 +134,41 @@ export function solveEquation(input: string): EquationSolution {
   const lines = sanitizedInput.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const raw = lines.find((l) => l.includes("=") || l.includes("＝")) || lines[0] || "";
 
-  let normalized = raw
-    .trim()
-    .replace(/＝/g, "=")
-    .replace(/[⁰¹²³]/g, (digit) => `^${"⁰¹²³".indexOf(digit)}`)
-    .replace(/[−–—]/g, "-")
-    .replace(/[×·]/g, "*")
-    .replace(/÷/g, "/")
-    .replace(/,/g, "")
-    .replace(/X/g, "x");
+  let normalized = normalizeMathSymbols(raw).trim().replace(/X/g, "x");
 
-  // If user omitted equals sign, normalize to `= 0`
+  // Detect pure arithmetic/scientific expressions (no variables, either no '=' or trailing '='/'=?')
+  const trimmedNoQ = normalized.replace(/=\s*\?+\s*$/, "=").trim();
+  const isTrailingEqualsArithmetic =
+    trimmedNoQ.endsWith("=") && !hasUnknownAlgebraicVariable(trimmedNoQ.slice(0, -1));
+  const isPureArithmeticExpression =
+    !trimmedNoQ.includes("=") && !hasUnknownAlgebraicVariable(trimmedNoQ);
+
+  if (isTrailingEqualsArithmetic || isPureArithmeticExpression) {
+    const exprOnly = (isTrailingEqualsArithmetic ? trimmedNoQ.slice(0, -1) : trimmedNoQ)
+      .trim()
+      .replace(/\bln\(/g, "log(");
+    if (exprOnly && /\d/.test(exprOnly)) {
+      try {
+        const evaluated = evaluate(exprOnly);
+        if (typeof evaluated === "number" && Number.isFinite(evaluated)) {
+          const formattedValue = format(evaluated);
+          return {
+            summary: `= ${formattedValue}`,
+            steps: [
+              `Start with ${exprOnly}.`,
+              "Apply standard order of operations (brackets, exponents/roots, multiplication/division, addition/subtraction).",
+              `Therefore, ${exprOnly} = ${formattedValue}.`,
+            ],
+            roots: [tidy(evaluated)],
+          };
+        }
+      } catch {
+        // Fall through to algebraic parser error handling
+      }
+    }
+  }
+
+  // If user omitted equals sign on an algebraic expression, normalize to `= 0`
   if (!normalized.includes("=")) {
     normalized = `${normalized} = 0`;
   } else if (normalized.trim().endsWith("=")) {

@@ -1,0 +1,7 @@
+{
+  "name": "Nume: Scientific Calculator Pro",
+  "description": "Free, offline scientific calculator with 2D graphing, camera handwritten math scanner, equation solver, and unit converter.",
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

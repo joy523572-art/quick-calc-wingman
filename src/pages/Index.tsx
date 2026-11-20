@@ -15,6 +15,8 @@ import {
   resetAllFeatureTrials,
   exhaustAllFeatureTrials,
   isAppPermanentlyBlocked,
+  maybeGrantOneHourEquationTestPass,
+  getEquationTestPassRemainingMs,
 } from "@/lib/trialManager";
 import { Button } from "@/components/ui/button";
 import {
@@ -92,12 +94,35 @@ const Index = () => {
   } = useSubscription();
   const network = useNetworkMode();
 
-  // Listen for feature trial use events to re-render tab lock badges live
+  // Grant one-time 1-hour Equation Solver test permission if lifetime trials were already used,
+  // and keep countdown / automatic re-lock active when the 1-hour window expires.
   useEffect(() => {
+    maybeGrantOneHourEquationTestPass(isPro);
+
     const handleTrialUsed = () => setTrialTick((t) => t + 1);
     window.addEventListener("nume:feature-trial-used", handleTrialUsed);
-    return () => window.removeEventListener("nume:feature-trial-used", handleTrialUsed);
-  }, []);
+
+    const remainingMs = getEquationTestPassRemainingMs();
+    let expiryTimer: number | undefined;
+    let intervalTimer: number | undefined;
+
+    if (remainingMs > 0) {
+      expiryTimer = window.setTimeout(() => {
+        getEquationTestPassRemainingMs();
+        setTrialTick((t) => t + 1);
+      }, remainingMs + 100);
+      intervalTimer = window.setInterval(() => {
+        getEquationTestPassRemainingMs();
+        setTrialTick((t) => t + 1);
+      }, 30000);
+    }
+
+    return () => {
+      window.removeEventListener("nume:feature-trial-used", handleTrialUsed);
+      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+      if (intervalTimer !== undefined) window.clearInterval(intervalTimer);
+    };
+  }, [isPro]);
 
   const isBlocked = isAppPermanentlyBlocked(isPro);
 

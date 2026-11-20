@@ -59,6 +59,16 @@ describe("equation solver", () => {
     expect(answer.roots[0]).toBeCloseTo(3.333333333, 4);
     expect(answer.summary).toContain("3.333333333");
   });
+
+  it("evaluates handwritten arithmetic and square-root expressions without x", () => {
+    const arith = solveEquation("25 * 4 + 10 = ?");
+    expect(arith.summary).toBe("= 110");
+    expect(arith.roots).toEqual([110]);
+
+    const sqrtRes = solveEquation("√144 + 8 =");
+    expect(sqrtRes.summary).toBe("= 20");
+    expect(sqrtRes.roots).toEqual([20]);
+  });
 });
 
 

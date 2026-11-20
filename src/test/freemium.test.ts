@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   canSaveHistory,
   canToggleNetwork,
@@ -119,5 +119,56 @@ describe("Permanently Unlocked & Lifetime Trial Access", () => {
 
     // Calculator remains permanently free
     expect(canAccessPremiumFeature("calculator", false)).toBe(true);
+  });
+
+  it("grants a one-time 1-hour Equation Solver test permission when exhausted and locks back after 1 hour", async () => {
+    const startTime = Date.parse("2026-11-20T16:15:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(startTime);
+
+    try {
+      const {
+        maybeGrantOneHourEquationTestPass,
+        isEquationTestPassActive,
+        formatTrialTimeRemaining,
+      } = await import("@/lib/trialManager");
+
+      // Exhaust 3/3 Equation Solver trials and 3/3 Graph trials
+      consumeFeatureTrial("equation");
+      consumeFeatureTrial("equation");
+      consumeFeatureTrial("equation");
+      consumeFeatureTrial("graph");
+      consumeFeatureTrial("graph");
+      consumeFeatureTrial("graph");
+
+      expect(canAccessPremiumFeature("equation", false)).toBe(false);
+      expect(canAccessPremiumFeature("graph", false)).toBe(false);
+
+      const granted = maybeGrantOneHourEquationTestPass(false, startTime);
+      expect(granted).toBe(true);
+      expect(isEquationTestPassActive("equation", startTime)).toBe(true);
+
+      // Equation Solver is temporarily unlocked for 1 hour, while Graph remains locked
+      expect(canAccessPremiumFeature("equation", false)).toBe(true);
+      expect(canAccessPremiumFeature("graph", false)).toBe(false);
+      expect(formatTrialTimeRemaining("equation")).toContain("Test Access");
+
+      // Consuming Equation Solver during the 1-hour test window keeps underlying 3/3 state intact
+      consumeFeatureTrial("equation");
+      expect(getFeatureTrialCount("equation")).toBe(3);
+
+      // After 1 hour (61 minutes later), Equation Solver automatically locks back to 3/3
+      vi.advanceTimersByTime(61 * 60 * 1000);
+      const expiredTime = Date.now();
+      expect(isEquationTestPassActive("equation", expiredTime)).toBe(false);
+      expect(canAccessPremiumFeature("equation", false)).toBe(false);
+      expect(getFeatureTrialCount("equation")).toBe(3);
+
+      // Must NOT grant again once the one-time pass has been used
+      expect(maybeGrantOneHourEquationTestPass(false, expiredTime)).toBe(false);
+      expect(canAccessPremiumFeature("equation", false)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

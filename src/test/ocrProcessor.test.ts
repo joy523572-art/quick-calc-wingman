@@ -50,4 +50,9 @@ x^2 - Sx + 6 = O`;
     expect(isValidAlgebraicEquation("2x + 5 = 15")).toBe(true);
     expect(isValidAlgebraicEquation("x^2 - 5x + 6 = 0")).toBe(true);
   });
+
+  it("normalizes and extracts handwritten arithmetic and square-root expressions", () => {
+    expect(normalizeMathOcrText("√144 + 8")).toBe("sqrt(144) + 8");
+    expect(extractBestMathEquation("Notes\n25 × 4 + 1O")).toBe("25 * 4 + 10");
+  });
 });
