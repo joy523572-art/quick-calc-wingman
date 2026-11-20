@@ -100,4 +100,44 @@ describe("EquationSolverView Camera Scan & Photo Upload", () => {
       expect(screen.getByText("x = 6, y = 4")).toBeInTheDocument();
     });
   });
+
+  it("opens live Camera Scanner with Night Vision badge and toggles Flashlight when supported", async () => {
+    const applyConstraintsMock = vi.fn().mockResolvedValue(undefined);
+    const stopMock = vi.fn();
+    const fakeTrack = {
+      getCapabilities: () => ({ torch: true }),
+      applyConstraints: applyConstraintsMock,
+      stop: stopMock,
+    };
+    const fakeStream = {
+      getVideoTracks: () => [fakeTrack],
+      getTracks: () => [fakeTrack],
+    } as unknown as MediaStream;
+
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue(fakeStream),
+      },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+
+    render(<EquationSolverView isPro={true} onRequestUpgrade={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Camera Scan/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Night Vision Ready/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Turn flashlight on/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Turn flashlight on/i }));
+
+    await waitFor(() => {
+      expect(applyConstraintsMock).toHaveBeenCalledWith({
+        advanced: [{ torch: true }],
+      });
+      expect(screen.getByRole("button", { name: /Turn flashlight off/i })).toBeInTheDocument();
+    });
+  });
 });

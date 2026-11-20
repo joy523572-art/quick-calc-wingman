@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,22 +59,22 @@ const MATH_RESPONSE_SCHEMA = {
   required: ["detectedEquation", "mathType", "summary", "steps"],
 };
 
-const SYSTEM_INSTRUCTION = `You are a precision handwritten mathematics OCR reader and step-by-step solver.
-Carefully inspect the image or equation input:
-- Read ALL handwritten or printed math accurately: digits, variables, fractions (a/b), exponents (x^2), square roots (sqrt(...)), parentheses, systems of equations (separated by commas or newlines), trigonometry, logarithms, and arithmetic expressions.
-- NEVER invent or alter digits that are not visible in the image.
-- If multiple lines appear, focus on the primary mathematical expression or system of equations; if unreadable or containing no math, set mathType to "unreadable" and detectedEquation to "".
-- Solve the transcribed math with 100% mathematical accuracy and show clear step-by-step working.
-- Keep explanations concise and direct.`;
+const SYSTEM_INSTRUCTION = `You are an expert low-light, blurry, and handwritten mathematics vision reader and step-by-step solver.
+Carefully examine every visual detail—even in dim night lighting, heavy shadows, motion blur, camera defocus, faint pencil, or messy cursive handwriting:
+- When two images are provided, Image 1 is the exposure-lifted natural photo and Image 2 is a local-contrast night-vision & sharpened pass of the exact same handwritten document. Cross-reference BOTH images to resolve faint strokes, blurred digits, fractions (a/b), exponents (x^2), square roots (sqrt(...)), parentheses, systems of equations, trigonometry, logarithms, and arithmetic.
+- NEVER invent unrelated numbers; carefully decode actual strokes from both views. If a handwritten document has multiple lines of working or multiple problems, transcribe the primary unsolved problem or system clearly and solve it step-by-step.
+- Only set mathType to "unreadable" if there is genuinely no visible mathematical writing in either image.
+- Solve the transcribed mathematics with 100% accuracy and provide concise, clear ordered steps.`;
 
 async function createApp() {
   const app = express();
-  app.use(express.json({ limit: "12mb" }));
+  app.use(express.json({ limit: "18mb" }));
 
   app.post("/api/solve-math-image", async (req: Request, res: Response) => {
     try {
-      const { imageBase64, mimeType } = req.body as {
+      const { imageBase64, enhancedImageBase64, mimeType } = req.body as {
         imageBase64?: string;
+        enhancedImageBase64?: string;
         mimeType?: string;
       };
 
@@ -90,28 +90,47 @@ async function createApp() {
       }
 
       const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, "");
+      const cleanEnhancedBase64 =
+        typeof enhancedImageBase64 === "string" && enhancedImageBase64.trim()
+          ? enhancedImageBase64.replace(/^data:[^;]+;base64,/, "")
+          : null;
       const safeMime =
         typeof mimeType === "string" && mimeType.startsWith("image/")
           ? mimeType
           : "image/jpeg";
 
+      const parts: Array<
+        { inlineData: { mimeType: string; data: string } } | { text: string }
+      > = [
+        {
+          inlineData: {
+            mimeType: safeMime,
+            data: cleanBase64,
+          },
+        },
+      ];
+
+      if (cleanEnhancedBase64) {
+        parts.push({
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: cleanEnhancedBase64,
+          },
+        });
+      }
+
+      parts.push({
+        text: cleanEnhancedBase64
+          ? "Read the handwritten math from these two views (natural photo + night-vision deblurred contrast view) even if dark, blurry, or faint. Transcribe the exact equation/expression and solve it completely."
+          : "Read the handwritten or printed math in this photo even if dim, shadowed, or slightly blurry. Transcribe the exact equation/expression and solve it completely.",
+      });
+
       const response = await ai.models.generateContent({
         model: "gemini-4-hydrogen",
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: safeMime,
-                data: cleanBase64,
-              },
-            },
-            {
-              text: "Transcribe the handwritten or printed mathematics in this image accurately and solve it completely with step-by-step working.",
-            },
-          ],
-        },
+        contents: { parts },
         config: {
           systemInstruction: SYSTEM_INSTRUCTION,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.XHIGH },
           responseMimeType: "application/json",
           responseSchema: MATH_RESPONSE_SCHEMA,
         },

@@ -32,6 +32,8 @@ import {
   Camera,
   ImagePlus,
   X,
+  Flashlight,
+  Moon,
 } from "lucide-react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { toast } from "@/hooks/use-toast";
@@ -52,6 +54,8 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraStarting, setCameraStarting] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   const resultRef = useRef<HTMLDivElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +73,8 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    setTorchSupported(false);
+    setTorchOn(false);
   };
 
   useEffect(() => {
@@ -207,6 +213,10 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
         audio: false,
       });
       streamRef.current = stream;
+      const track = stream.getVideoTracks()[0];
+      const caps = track?.getCapabilities?.() as ({ torch?: boolean } & MediaTrackCapabilities) | undefined;
+      setTorchSupported(Boolean(caps?.torch));
+      setTorchOn(false);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
@@ -217,6 +227,20 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
       );
     } finally {
       setCameraStarting(false);
+    }
+  };
+
+  const toggleCameraTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || typeof track.applyConstraints !== "function") return;
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: next }] as unknown as MediaTrackConstraintSet[],
+      });
+      setTorchOn(next);
+    } catch {
+      setTorchSupported(false);
     }
   };
 
@@ -377,14 +401,14 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
                 {isScanning ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
-                    <span>Reading handwritten math…</span>
+                    <span>Enhancing low-light &amp; reading math…</span>
                   </>
                 ) : (
                   <span>Scanned photo</span>
                 )}
               </div>
               <p className="text-[11px] text-muted-foreground truncate">
-                {inputEq ? `Detected: ${inputEq}` : "Capture clear handwriting on bright paper"}
+                {inputEq ? `Detected: ${inputEq}` : "Night Vision & Anti-Blur auto-enhanced"}
               </p>
             </div>
             <Button
@@ -584,7 +608,7 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
               Scan Handwritten Math
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Align the equation inside the frame in clear lighting and capture to solve.
+              Night Vision &amp; Anti-Blur enhancement automatically clarifies dim or blurry handwriting.
             </DialogDescription>
           </DialogHeader>
 
@@ -597,7 +621,26 @@ export const EquationSolverView: React.FC<EquationSolverViewProps> = ({ isPro, o
               className="w-full h-full object-cover"
             />
             {!cameraError && (
-              <div className="pointer-events-none absolute inset-6 border-2 border-dashed border-primary/80 rounded-2xl shadow-sm" />
+              <>
+                <div className="pointer-events-none absolute inset-6 border-2 border-dashed border-primary/80 rounded-2xl shadow-sm" />
+                <div className="pointer-events-none absolute top-2.5 left-2.5 px-2 py-1 rounded-lg bg-black/65 text-white text-[10px] font-semibold flex items-center gap-1 backdrop-blur-xs">
+                  <Moon className="w-3 h-3 text-primary" />
+                  <span>Night Vision Ready</span>
+                </div>
+                {torchSupported && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={torchOn ? "default" : "secondary"}
+                    onClick={() => void toggleCameraTorch()}
+                    aria-label={torchOn ? "Turn flashlight off" : "Turn flashlight on"}
+                    className="absolute top-2.5 right-2.5 h-8 px-2.5 rounded-lg text-[11px] font-semibold gap-1.5 cursor-pointer"
+                  >
+                    <Flashlight className="w-3.5 h-3.5" />
+                    <span>{torchOn ? "Flash On" : "Flash"}</span>
+                  </Button>
+                )}
+              </>
             )}
             {cameraStarting && (
               <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 text-white text-xs">

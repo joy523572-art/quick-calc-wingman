@@ -304,15 +304,20 @@ async function callServerMathText(equation: string): Promise<ServerMathApiRespon
 
 async function callServerMathImage(
   base64: string,
-  mimeType: string
+  mimeType: string,
+  enhancedBase64?: string
 ): Promise<ServerMathApiResponse | null> {
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), 18000) : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 25000) : null;
   try {
     const res = await fetch("/api/solve-math-image", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageBase64: base64, mimeType }),
+      body: JSON.stringify({
+        imageBase64: base64,
+        ...(enhancedBase64 ? { enhancedImageBase64: enhancedBase64 } : {}),
+        mimeType,
+      }),
       signal: controller?.signal,
     });
     if (!res.ok) return null;
@@ -764,12 +769,12 @@ export interface ScannedMathResult {
  *    Tesseract math OCR (`performFastMathOcr`) + `extractBestMathEquation` + deterministic/AI fallback solving.
  */
 export async function scanAndSolveHandwrittenMath(file: File): Promise<ScannedMathResult> {
-  // 1. Primary path when online: Multimodal Gemini Vision
+  // 1. Primary path when online: Multimodal Gemini Vision with dual night-vision & deblurred views
   if (!isEffectiveOffline()) {
     try {
-      const { base64, mimeType } = await prepareImageForVision(file);
+      const { base64, enhancedBase64, mimeType } = await prepareImageForVision(file);
       if (base64) {
-        const visionRes = await callServerMathImage(base64, mimeType);
+        const visionRes = await callServerMathImage(base64, mimeType, enhancedBase64);
         const detected = visionRes?.detectedEquation?.trim() || "";
         if (visionRes && detected) {
           // Cross-verify deterministically when local solver supports the equation type

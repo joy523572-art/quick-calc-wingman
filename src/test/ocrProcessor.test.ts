@@ -3,6 +3,8 @@ import {
   normalizeMathOcrText,
   extractBestMathEquation,
   isValidAlgebraicEquation,
+  enhanceLowLightAndDeblur,
+  brightenColorImageForNight,
 } from "@/lib/ocrImageProcessor";
 
 describe("OCR Image Processor & Math Extractor", () => {
@@ -54,5 +56,53 @@ x^2 - Sx + 6 = O`;
   it("normalizes and extracts handwritten arithmetic and square-root expressions", () => {
     expect(normalizeMathOcrText("√144 + 8")).toBe("sqrt(144) + 8");
     expect(extractBestMathEquation("Notes\n25 × 4 + 1O")).toBe("25 * 4 + 10");
+  });
+
+  it("recovers crisp dark ink on bright white paper from an unevenly lit dark night buffer", () => {
+    const width = 60;
+    const height = 40;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // Left side is deep shadow (28/255), right side is dim lamp light (110/255)
+        const bg = x < width / 2 ? 28 : 110;
+        // Horizontal blurred/faint handwriting stroke along y = 19..20
+        const isStroke = (y === 19 || y === 20) && x >= 10 && x <= 50;
+        const val = isStroke ? Math.round(bg * 0.42) : bg;
+        const idx = (y * width + x) * 4;
+        data[idx] = val;
+        data[idx + 1] = val;
+        data[idx + 2] = val;
+        data[idx + 3] = 255;
+      }
+    }
+
+    enhanceLowLightAndDeblur(data, width, height);
+
+    const shadowPaperPixel = data[(5 * width + 15) * 4];
+    const litPaperPixel = data[(5 * width + 45) * 4];
+    const shadowInkPixel = data[(19 * width + 15) * 4];
+    const litInkPixel = data[(19 * width + 45) * 4];
+
+    expect(shadowPaperPixel).toBeGreaterThanOrEqual(240);
+    expect(litPaperPixel).toBeGreaterThanOrEqual(240);
+    expect(shadowInkPixel).toBeLessThan(120);
+    expect(litInkPixel).toBeLessThan(120);
+  });
+
+  it("lifts exposure of very dark natural color night images without clipping paper", () => {
+    const width = 20;
+    const height = 20;
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 24;
+      data[i + 1] = 22;
+      data[i + 2] = 20;
+      data[i + 3] = 255;
+    }
+
+    brightenColorImageForNight(data, width, height);
+    expect(data[0]).toBeGreaterThan(70);
   });
 });

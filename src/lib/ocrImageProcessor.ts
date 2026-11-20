@@ -5,75 +5,174 @@
 import type { Worker } from "tesseract.js";
 
 /**
- * Robust percentile contrast enhancement for handwritten equations on notebook paper.
- * Preserves continuous ink and pencil strokes with their natural anti-aliased curves
- * while stretching the paper background to bright clean white without erasing faint strokes.
+ * Night-vision & anti-blur handwriting enhancement pipeline ($O(W \times H)$):
+ * 1. Adaptive gamma lift rescues faint ink & dark paper shot at night or under dim light.
+ * 2. 3x3 unsharp-mask kernel sharpens defocused / motion-blurred strokes.
+ * 3. Integral-image (summed-area table) local background normalization removes uneven shadows
+ *    across the page so dark shadowed ink remains crisp without crushing corners to black.
  */
-function enhanceHandwritingContrast(data: Uint8ClampedArray, width: number, height: number): void {
+export function enhanceLowLightAndDeblur(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number
+): void {
   const len = width * height;
-  const gray = new Uint8Array(len);
+  if (width <= 0 || height <= 0 || data.length < len * 4) return;
 
-  let min = 255;
-  let max = 0;
-  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+  const gray = new Uint8Array(len);
+  let lumSum = 0;
+  for (let i = 0, j = 0; j < len; i += 4, j++) {
     const g = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
     gray[j] = g;
-    if (g < min) min = g;
-    if (g > max) max = g;
+    lumSum += g;
   }
 
-  if (max <= min) max = min + 1;
+  const meanLum = lumSum / len;
 
-  // Build histogram to find 3rd percentile (ink/pencil) and 88th percentile (paper background)
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < len; i++) {
-    hist[gray[i]]++;
-  }
-
-  let count = 0;
-  let p3 = min;
-  let p88 = max;
-  const targetP3 = len * 0.03;
-  const targetP88 = len * 0.88;
-
-  for (let i = 0; i < 256; i++) {
-    count += hist[i];
-    if (count >= targetP3 && p3 === min) {
-      p3 = i;
+  // Step 1: Adaptive night exposure boost when photo is dim or under-exposed
+  const lifted = new Uint8Array(len);
+  if (meanLum < 135) {
+    const gamma = Math.max(0.34, Math.min(0.88, meanLum / 160));
+    const gammaLut = new Uint8Array(256);
+    for (let v = 0; v < 256; v++) {
+      gammaLut[v] = Math.min(255, Math.round(Math.pow(v / 255, gamma) * 255));
     }
-    if (count >= targetP88 && p88 === max) {
-      p88 = i;
-      break;
+    for (let j = 0; j < len; j++) {
+      lifted[j] = gammaLut[gray[j]];
     }
+  } else {
+    lifted.set(gray);
   }
 
-  if (p88 <= p3) {
-    p3 = min;
-    p88 = max;
-  }
-
-  const range = p88 - p3 || 1;
-
-  // Precompute 256-entry lookup table (takes < 0.01ms)
-  const lut = new Uint8Array(256);
-  for (let g = 0; g < 256; g++) {
-    if (g <= p3) {
-      lut[g] = 0; // Solid dark for ink strokes
-    } else if (g >= p88) {
-      lut[g] = 255; // Crisp pure white for paper background
-    } else {
-      const norm = (g - p3) / range;
-      lut[g] = Math.round(Math.pow(norm, 1.3) * 255);
+  // Step 2: 3x3 Unsharp-Mask sharpening for blurry / out-of-focus writing
+  const sharp = new Uint8Array(len);
+  sharp.set(lifted);
+  if (width >= 3 && height >= 3) {
+    for (let y = 1; y < height - 1; y++) {
+      const rowOffset = y * width;
+      for (let x = 1; x < width - 1; x++) {
+        const idx = rowOffset + x;
+        const c = lifted[idx];
+        const lap =
+          4 * c -
+          lifted[idx - 1] -
+          lifted[idx + 1] -
+          lifted[idx - width] -
+          lifted[idx + width];
+        const sharpened = c + Math.round(0.58 * lap);
+        sharp[idx] = sharpened < 0 ? 0 : sharpened > 255 ? 255 : sharpened;
+      }
     }
   }
 
-  // Apply lookup table instantaneously to all pixels
-  for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-    const val = lut[gray[j]];
-    data[i] = val;
-    data[i + 1] = val;
-    data[i + 2] = val;
-    data[i + 3] = 255;
+  // Step 3: Build summed-area table (integral image) for fast local illumination estimation
+  const stride = width + 1;
+  const sat = new Float64Array(stride * (height + 1));
+  for (let y = 1; y <= height; y++) {
+    let rowSum = 0;
+    const srcRow = (y - 1) * width;
+    const dstRow = y * stride;
+    const prevRow = (y - 1) * stride;
+    for (let x = 1; x <= width; x++) {
+      rowSum += sharp[srcRow + x - 1];
+      sat[dstRow + x] = sat[prevRow + x] + rowSum;
+    }
+  }
+
+  const radius = Math.max(8, Math.min(48, Math.round(Math.min(width, height) * 0.055)));
+
+  // Step 4: Normalize each pixel relative to its local neighborhood brightness
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height - 1, y + radius);
+    const topOff = y0 * stride;
+    const botOff = (y1 + 1) * stride;
+    const rowLen = y1 - y0 + 1;
+
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width - 1, x + radius);
+      const boxSum =
+        sat[botOff + x1 + 1] -
+        sat[topOff + x1 + 1] -
+        sat[botOff + x0] +
+        sat[topOff + x0];
+      const localMean = boxSum / (rowLen * (x1 - x0 + 1));
+
+      const j = y * width + x;
+      const px = sharp[j];
+      const diff = localMean - px;
+      const ratio = px / Math.max(12, localMean);
+
+      let out: number;
+      if (ratio >= 0.96 || diff < 3) {
+        out = 255;
+      } else {
+        const scaled = Math.max(0, Math.min(1, (ratio - 0.66) / 0.3));
+        out = Math.round(Math.pow(scaled, 1.35) * 235);
+      }
+
+      const rgba = j * 4;
+      data[rgba] = out;
+      data[rgba + 1] = out;
+      data[rgba + 2] = out;
+      data[rgba + 3] = 255;
+    }
+  }
+}
+
+/**
+ * Gently lifts exposure and sharpens blur on the natural color view for dark scenes
+ * while preserving original pencil/pen hue, paper lines, and shading cues for Vision AI.
+ */
+export function brightenColorImageForNight(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number
+): void {
+  const len = width * height;
+  if (width <= 0 || height <= 0 || data.length < len * 4) return;
+
+  let lumSum = 0;
+  for (let i = 0, j = 0; j < len; i += 4, j++) {
+    lumSum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  const meanLum = lumSum / len;
+
+  if (meanLum < 125) {
+    const gamma = Math.max(0.45, Math.min(0.88, meanLum / 145));
+    const lut = new Uint8Array(256);
+    for (let v = 0; v < 256; v++) {
+      lut[v] = Math.min(255, Math.round(Math.pow(v / 255, gamma) * 255));
+    }
+    for (let i = 0; i < len * 4; i += 4) {
+      data[i] = lut[data[i]];
+      data[i + 1] = lut[data[i + 1]];
+      data[i + 2] = lut[data[i + 2]];
+    }
+  }
+
+  // Gentle 3x3 unsharp mask across color channels to counter camera motion blur
+  if (width >= 3 && height >= 3) {
+    const copy = new Uint8ClampedArray(data);
+    const rowBytes = width * 4;
+    for (let y = 1; y < height - 1; y++) {
+      const rowOff = y * rowBytes;
+      for (let x = 1; x < width - 1; x++) {
+        const idx = rowOff + x * 4;
+        for (let c = 0; c < 3; c++) {
+          const center = copy[idx + c];
+          const lap =
+            4 * center -
+            copy[idx - 4 + c] -
+            copy[idx + 4 + c] -
+            copy[idx - rowBytes + c] -
+            copy[idx + rowBytes + c];
+          const val = center + Math.round(0.32 * lap);
+          data[idx + c] = val < 0 ? 0 : val > 255 ? 255 : val;
+        }
+      }
+    }
   }
 }
 
@@ -100,16 +199,17 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * Converts a camera photo or uploaded image File/Blob into a clean, orientation-corrected
- * base64 JPEG (max 1280px) for multimodal AI math reading without harsh binarization.
+ * Prepares dual base64 JPEG views (max 1440px) for multimodal AI vision:
+ * - `base64`: exposure-lifted & softly sharpened natural view
+ * - `enhancedBase64`: night-vision local contrast + deblurred view for dark/blurry writing
  */
 export async function prepareImageForVision(
   file: Blob | File
-): Promise<{ base64: string; mimeType: string }> {
+): Promise<{ base64: string; enhancedBase64?: string; mimeType: string }> {
   try {
     if (typeof window !== "undefined" && "createImageBitmap" in window) {
       const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-      const maxDim = 1280;
+      const maxDim = 1440;
       let width = bitmap.width;
       let height = bitmap.height;
       if (width > maxDim || height > maxDim) {
@@ -128,12 +228,36 @@ export async function prepareImageForVision(
       if (ctx) {
         ctx.drawImage(bitmap, 0, 0, width, height);
         bitmap.close?.();
-        const resizedBlob = await new Promise<Blob>((resolve) =>
-          canvas.toBlob((b) => resolve(b || file), "image/jpeg", 0.88)
+
+        const rawImageData = ctx.getImageData(0, 0, width, height);
+        const naturalData = new Uint8ClampedArray(rawImageData.data);
+        brightenColorImageForNight(naturalData, width, height);
+        rawImageData.data.set(naturalData);
+        ctx.putImageData(rawImageData, 0, 0);
+
+        const naturalBlob = await new Promise<Blob>((resolve) =>
+          canvas.toBlob((b) => resolve(b || file), "image/jpeg", 0.9)
         );
+
+        // Generate second night-vision & deblurred contrast view
+        const nightData = new Uint8ClampedArray(naturalData);
+        enhanceLowLightAndDeblur(nightData, width, height);
+        rawImageData.data.set(nightData);
+        ctx.putImageData(rawImageData, 0, 0);
+
+        const nightBlob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob((b) => resolve(b), "image/jpeg", 0.88)
+        );
+
+        const [base64, enhancedBase64] = await Promise.all([
+          blobToBase64(naturalBlob),
+          nightBlob ? blobToBase64(nightBlob) : Promise.resolve(undefined),
+        ]);
+
         return {
-          base64: await blobToBase64(resizedBlob),
-          mimeType: resizedBlob.type || "image/jpeg",
+          base64,
+          enhancedBase64,
+          mimeType: naturalBlob.type || "image/jpeg",
         };
       }
       bitmap.close?.();
@@ -149,14 +273,14 @@ export async function prepareImageForVision(
 }
 
 /**
- * Rescales raw multi-megapixel camera photos to max 1000px and applies contrast
- * enhancement for fast (< 200ms) and accurate OCR processing.
+ * Rescales raw multi-megapixel camera photos to max 1100px and applies night-vision
+ * adaptive illumination + deblurring for accurate offline OCR processing.
  */
 export async function preprocessImageForOcr(file: File): Promise<Blob> {
   try {
     if (typeof window !== "undefined" && "createImageBitmap" in window) {
       const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-      const maxDim = 1000;
+      const maxDim = 1100;
       let width = bitmap.width;
       let height = bitmap.height;
 
@@ -179,11 +303,11 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
         bitmap.close?.();
 
         const imageData = ctx.getImageData(0, 0, width, height);
-        enhanceHandwritingContrast(imageData.data, width, height);
+        enhanceLowLightAndDeblur(imageData.data, width, height);
         ctx.putImageData(imageData, 0, 0);
 
         return new Promise<Blob>((resolve) => {
-          canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", 0.9);
+          canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", 0.92);
         });
       }
     }
@@ -205,7 +329,7 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
     const timer = setTimeout(() => finish(file), 3000);
 
     img.onload = () => {
-      const maxDim = 1000;
+      const maxDim = 1100;
       let width = img.width;
       let height = img.height;
 
@@ -231,7 +355,7 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
 
       ctx.drawImage(img, 0, 0, width, height);
       const imageData = ctx.getImageData(0, 0, width, height);
-      enhanceHandwritingContrast(imageData.data, width, height);
+      enhanceLowLightAndDeblur(imageData.data, width, height);
       ctx.putImageData(imageData, 0, 0);
 
       canvas.toBlob(
@@ -239,7 +363,7 @@ export async function preprocessImageForOcr(file: File): Promise<Blob> {
           finish(blob || file);
         },
         "image/jpeg",
-        0.9
+        0.92
       );
     };
 
@@ -279,7 +403,7 @@ async function rotateImageBlobDeg(blob: Blob, degrees: number): Promise<Blob> {
     bitmap.close?.();
 
     return new Promise<Blob>((resolve) => {
-      canvas.toBlob((b) => resolve(b || blob), "image/jpeg", 0.9);
+      canvas.toBlob((b) => resolve(b || blob), "image/jpeg", 0.92);
     });
   } catch {
     return blob;
@@ -326,7 +450,7 @@ export interface OcrResult {
 
 /**
  * Fast mathematical OCR reading using a cached worker and local traineddata.
- * Supports multi-angle orientation passes (0°, 90°, 270°) and returns confidence.
+ * Supports multi-angle orientation passes (0°, 90°, 270°, 180°) and returns confidence.
  */
 export async function performFastMathOcr(imageBlob: Blob | File): Promise<OcrResult> {
   try {
@@ -358,7 +482,19 @@ export async function performFastMathOcr(imageBlob: Blob | File): Promise<OcrRes
       return { text: text3, confidence: conf3 };
     }
 
-    return { text: text || text2 || text3, confidence: Math.max(confidence, conf2, conf3, 0.5) };
+    // Pass 4: Upside-down photo (180°)
+    const rotated180 = await rotateImageBlobDeg(imageBlob, 180);
+    const ret4 = await worker.recognize(rotated180);
+    const text4 = ret4?.data?.text || "";
+    const conf4 = (ret4?.data?.confidence ?? 60) / 100;
+    if (text4.includes("=") && /\d/.test(text4)) {
+      return { text: text4, confidence: conf4 };
+    }
+
+    return {
+      text: text || text2 || text3 || text4,
+      confidence: Math.max(confidence, conf2, conf3, conf4, 0.5),
+    };
   } catch {
     // Graceful fallback to one-shot recognize if worker reuse encounters an error
     try {
