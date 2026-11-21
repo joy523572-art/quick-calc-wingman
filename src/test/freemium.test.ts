@@ -171,4 +171,57 @@ describe("Permanently Unlocked & Lifetime Trial Access", () => {
       vi.useRealTimers();
     }
   });
+
+  it("grants a one-time 30-minute Converter access when exhausted and locks back to 4/4 after 30 minutes", async () => {
+    const startTime = Date.parse("2026-11-21T08:50:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(startTime);
+
+    try {
+      const {
+        maybeGrantThirtyMinuteConverterTestPass,
+        isConverterTestPassActive,
+        formatTrialTimeRemaining,
+      } = await import("@/lib/trialManager");
+
+      // Exhaust 4/4 Converter trials and 3/3 Graph trials
+      consumeFeatureTrial("converter");
+      consumeFeatureTrial("converter");
+      consumeFeatureTrial("converter");
+      consumeFeatureTrial("converter");
+      consumeFeatureTrial("graph");
+      consumeFeatureTrial("graph");
+      consumeFeatureTrial("graph");
+
+      expect(canAccessPremiumFeature("converter", false)).toBe(false);
+      expect(canAccessPremiumFeature("graph", false)).toBe(false);
+
+      const granted = maybeGrantThirtyMinuteConverterTestPass(false, startTime);
+      expect(granted).toBe(true);
+      expect(isConverterTestPassActive("converter", startTime)).toBe(true);
+
+      // Converter is temporarily unlocked for 30 minutes, while Graph remains locked
+      expect(canAccessPremiumFeature("converter", false)).toBe(true);
+      expect(canAccessPremiumFeature("graph", false)).toBe(false);
+      expect(formatTrialTimeRemaining("converter")).toBe("Test Access (30m left)");
+
+      // Using Converter during the 30-minute window keeps underlying 4/4 state intact
+      consumeFeatureTrial("converter");
+      expect(getFeatureTrialCount("converter")).toBe(4);
+
+      // After 31 minutes, Converter automatically locks back to its previous 4/4 state
+      vi.advanceTimersByTime(31 * 60 * 1000);
+      const expiredTime = Date.now();
+      expect(isConverterTestPassActive("converter", expiredTime)).toBe(false);
+      expect(canAccessPremiumFeature("converter", false)).toBe(false);
+      expect(getFeatureTrialCount("converter")).toBe(4);
+      expect(formatTrialTimeRemaining("converter")).toBe("Trial Used (4/4)");
+
+      // Must NOT re-grant once the one-time 30-minute pass has been used
+      expect(maybeGrantThirtyMinuteConverterTestPass(false, expiredTime)).toBe(false);
+      expect(canAccessPremiumFeature("converter", false)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -29,6 +29,12 @@ const EQUATION_TEST_PASS_APPLIED_KEY = "nume.eq_test_pass_applied.v1";
 const EQUATION_TEST_PASS_EXPIRES_KEY = "nume.eq_test_pass_expires_at.v1";
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+const CONVERTER_TEST_PASS_ID = "2026-11-21-conv-30m";
+const CONVERTER_TEST_PASS_DEADLINE = Date.parse("2026-11-21T12:00:00.000Z");
+const CONVERTER_TEST_PASS_APPLIED_KEY = "nume.conv_test_pass_applied.v1";
+const CONVERTER_TEST_PASS_EXPIRES_KEY = "nume.conv_test_pass_expires_at.v1";
+const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+
 const ALL_FEATURE_KEYS = [
   "graph",
   "equation",
@@ -187,11 +193,90 @@ export function maybeGrantOneHourEquationTestPass(
   }
 }
 
+export function getConverterTestPassRemainingMs(now: number = Date.now()): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const rawExpires = localStorage.getItem(CONVERTER_TEST_PASS_EXPIRES_KEY);
+    if (!rawExpires) return 0;
+    const expiresAt = Number(rawExpires);
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+      localStorage.removeItem(CONVERTER_TEST_PASS_EXPIRES_KEY);
+      return 0;
+    }
+    return expiresAt - now;
+  } catch {
+    return 0;
+  }
+}
+
+function isConverterFeatureKey(featureKey: string): boolean {
+  const key = normalizeFeatureKey(featureKey);
+  return (
+    key === "converter" ||
+    key === "currency" ||
+    key === "weight" ||
+    key === "temperature" ||
+    key === "length"
+  );
+}
+
+export function isConverterTestPassActive(featureKey: string, now: number = Date.now()): boolean {
+  if (!isConverterFeatureKey(featureKey)) return false;
+  return getConverterTestPassRemainingMs(now) > 0;
+}
+
+/**
+ * Grants a one-time 30-minute Converter temporary access pass when lifetime
+ * Converter trials were already finished, preserving the underlying trial count
+ * and lock state so it automatically locks back to its previous state after 30 minutes.
+ */
+export function maybeGrantThirtyMinuteConverterTestPass(
+  isSubscribed: boolean,
+  now: number = Date.now()
+): boolean {
+  if (typeof window === "undefined" || isSubscribed) return false;
+  try {
+    if (now >= CONVERTER_TEST_PASS_DEADLINE) {
+      getConverterTestPassRemainingMs(now);
+      return false;
+    }
+
+    if (isConverterTestPassActive("converter", now)) {
+      return true;
+    }
+
+    if (localStorage.getItem(CONVERTER_TEST_PASS_APPLIED_KEY) === CONVERTER_TEST_PASS_ID) {
+      return false;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const urlLocked =
+      params.get("trial") === "expired" ||
+      params.get("lock") === "true" ||
+      params.get("lock") === "1";
+    if (urlLocked) return false;
+
+    const prevForceLock = localStorage.getItem("force_trial_lock") === "true";
+    const used = getFeatureTrialCount("converter");
+    const isLockedByTrials = prevForceLock || used >= getMaxFeatureTrials("converter");
+    if (!isLockedByTrials) {
+      return false;
+    }
+
+    localStorage.setItem(CONVERTER_TEST_PASS_APPLIED_KEY, CONVERTER_TEST_PASS_ID);
+    localStorage.setItem(CONVERTER_TEST_PASS_EXPIRES_KEY, String(now + THIRTY_MINUTES_MS));
+    window.dispatchEvent(new Event("nume:feature-trial-used"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function consumeFeatureTrial(featureKey: string): number {
   const key = normalizeFeatureKey(featureKey);
   if (typeof window === "undefined") return 0;
   if (key === "calculator" || key === "network") return 0;
-  if (isEquationTestPassActive(key)) {
+  if (isEquationTestPassActive(key) || isConverterTestPassActive(key)) {
     return getFeatureTrialCount(key);
   }
 
@@ -226,7 +311,7 @@ export function hasFeatureFreeTrials(featureKey: string, isSubscribed: boolean):
       return false;
     }
 
-    if (isEquationTestPassActive(key)) {
+    if (isEquationTestPassActive(key) || isConverterTestPassActive(key)) {
       return true;
     }
 
@@ -269,6 +354,11 @@ export function formatTrialTimeRemaining(featureKey: string = "graph"): string {
     const mins = Math.max(1, Math.ceil(remainingMs / 60000));
     return `Test Access (${mins}m left)`;
   }
+  if (isConverterTestPassActive(featureKey)) {
+    const remainingMs = getConverterTestPassRemainingMs();
+    const mins = Math.max(1, Math.ceil(remainingMs / 60000));
+    return `Test Access (${mins}m left)`;
+  }
   const remaining = getFeatureRemainingTrials(featureKey, false);
   const maxTrials = getMaxFeatureTrials(featureKey);
   if (remaining === 0 || remaining === Infinity) {
@@ -283,6 +373,8 @@ export function resetAllFeatureTrials(): void {
     localStorage.removeItem("force_trial_lock");
     localStorage.removeItem(EQUATION_TEST_PASS_EXPIRES_KEY);
     localStorage.removeItem(EQUATION_TEST_PASS_APPLIED_KEY);
+    localStorage.removeItem(CONVERTER_TEST_PASS_EXPIRES_KEY);
+    localStorage.removeItem(CONVERTER_TEST_PASS_APPLIED_KEY);
     ALL_FEATURE_KEYS.forEach((k) => {
       localStorage.removeItem(`${FEATURE_TRIAL_PREFIX}${k}`);
       removeCookieTrialCount(k);
@@ -297,6 +389,7 @@ export function exhaustAllFeatureTrials(): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(EQUATION_TEST_PASS_EXPIRES_KEY);
+    localStorage.removeItem(CONVERTER_TEST_PASS_EXPIRES_KEY);
     localStorage.setItem("force_trial_lock", "true");
     ALL_FEATURE_KEYS.forEach((k) => {
       const max = getMaxFeatureTrials(k);

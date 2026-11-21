@@ -17,6 +17,8 @@ import {
   isAppPermanentlyBlocked,
   maybeGrantOneHourEquationTestPass,
   getEquationTestPassRemainingMs,
+  maybeGrantThirtyMinuteConverterTestPass,
+  getConverterTestPassRemainingMs,
 } from "@/lib/trialManager";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,25 +96,32 @@ const Index = () => {
   } = useSubscription();
   const network = useNetworkMode();
 
-  // Grant one-time 1-hour Equation Solver test permission if lifetime trials were already used,
-  // and keep countdown / automatic re-lock active when the 1-hour window expires.
+  // Grant one-time temporary test permission when lifetime trials were already used,
+  // and keep countdown / automatic re-lock active when the window expires.
   useEffect(() => {
     maybeGrantOneHourEquationTestPass(isPro);
+    maybeGrantThirtyMinuteConverterTestPass(isPro);
 
     const handleTrialUsed = () => setTrialTick((t) => t + 1);
     window.addEventListener("nume:feature-trial-used", handleTrialUsed);
 
-    const remainingMs = getEquationTestPassRemainingMs();
+    const activeDelays = [
+      getEquationTestPassRemainingMs(),
+      getConverterTestPassRemainingMs(),
+    ].filter((ms) => ms > 0);
+    const minRemainingMs = activeDelays.length > 0 ? Math.min(...activeDelays) : 0;
     let expiryTimer: number | undefined;
     let intervalTimer: number | undefined;
 
-    if (remainingMs > 0) {
+    if (minRemainingMs > 0) {
       expiryTimer = window.setTimeout(() => {
         getEquationTestPassRemainingMs();
+        getConverterTestPassRemainingMs();
         setTrialTick((t) => t + 1);
-      }, remainingMs + 100);
+      }, minRemainingMs + 100);
       intervalTimer = window.setInterval(() => {
         getEquationTestPassRemainingMs();
+        getConverterTestPassRemainingMs();
         setTrialTick((t) => t + 1);
       }, 30000);
     }
